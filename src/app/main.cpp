@@ -7,7 +7,7 @@ int main(int argc, char* argv[])
 {
   QApplication app(argc, argv);
   QApplication::setApplicationName(QStringLiteral("Neuro-Navigation-Console"));
-  QApplication::setApplicationVersion(QStringLiteral(NEURONAV_VERSION_FULL));
+  QApplication::setApplicationVersion(QStringLiteral(NNC_VERSION_FULL));
 
   MainWindow window;
   window.show();

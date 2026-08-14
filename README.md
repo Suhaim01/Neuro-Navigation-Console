@@ -81,3 +81,7 @@ render loop never blocks or allocates. If no pose arrives within ~100 ms the wat
 greys the tool overlay and raises an alert rather than leaving a frozen pose looking
 live. Registration quality gates navigation mode: above the FRE threshold, guidance is
 withheld.
+
+## Build and test
+
+See [docs/BUILD.md](docs/BUILD.md).
