@@ -7,6 +7,24 @@ three synced MPR views, a live OpenIGTLink stream carrying both the planned traj
 and tool poses, paired-point registration between tracker and image space, and a
 safety layer that refuses to show a stale pose as if it were live.
 
+## End goal / target product
+
+With the limitations below, this console is aimed at the OR-side navigation pattern used in
+procedures such as:
+
+- Tumor resection
+- Stereotactic biopsy
+- Deep brain stimulation (DBS)
+- SEEG / depth electrode implantation
+
+and similar trajectory-guided cranial work.
+
+**Caveats (not a clinical product today):** tracking and plan input are driven by `navsim`
+over OpenIGTLink, not a live optical tracker; registration uses canned fiducial pairs, not
+an OR landmark-capture workflow. A real optical tracking stream and clinical registration
+capability would need to be integrated before this could approach those procedures in
+practice. Research software only — not a medical device, not for clinical use.
+
 ## Architecture
 
 ```mermaid
@@ -31,9 +49,9 @@ flowchart TD
 
 | Component | Responsibility |
 | --- | --- |
-| `NiftiLoader` + `VolumeTexture` | Parse NIfTI-1, derive `voxelToImage` from sform/qform, upload voxels as a GL 3D texture |
+| `NiftiLoader` + `VolumeTexture` | Parse NIfTI-1 (`data/MRHead.nii`), derive `voxelToImage` from sform/qform, upload voxels as a GL 3D texture |
 | `SceneModel` | The only mutable state: volume, registration, plan, live pose, FRE, alerts, telemetry |
-| `MprView` x3 | Orthogonal slices with window/level, zoom/pan and a linked crosshair |
+| `MprView` x3 | Orthogonal slices with zoom/pan and a linked crosshair |
 | `IgtlReceiver` + `navsim` | TRAJECTORY on connect, then tool poses in tracker space; received off the GUI thread |
 | `PairedPointRegistration` | SVD rigid solver over canned fiducial pairs, producing `trackerToImage` and FRE |
 | Tool overlay | Tip and shaft on all three planes, distance-to-target and angular deviation vs the plan |

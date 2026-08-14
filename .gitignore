@@ -68,6 +68,9 @@ vcpkg_installed/
 Testing/
 .cache/
 
-PLAN.md
-TIMELINE.md
-.cursor
+pendingWork/
+
+.cursor/
+.vscode/
+
+data/
