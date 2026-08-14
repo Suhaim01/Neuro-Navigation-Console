@@ -1,5 +1,7 @@
 # Neuro-Navigation-Console
 
+[![CI](https://github.com/Suhaim01/Neuro-Navigation-Console/actions/workflows/ci.yml/badge.svg)](https://github.com/Suhaim01/Neuro-Navigation-Console/actions/workflows/ci.yml)
+
 Research software. Not a medical device, not for clinical use.
 
 An intra-operative neuronavigation console prototype in Qt/C++: a brain MRI volume in
