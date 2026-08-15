@@ -7,14 +7,14 @@
 #include <QObject>
 #include <QSurfaceFormat>
 #include <QVBoxLayout>
+#include <QVector3D>
 #include <QWidget>
 
 namespace nnc {
 namespace detail {
 
-QWidget* makeOrientationPane(nnc::SliceOrientation orientation,
+QWidget* makeOrientationPane(nnc::VolumeUploadSurface* surface,
                               const QString& title,
-                              QLabel* statusLabel,
                               QWidget* parent)
 {
   QWidget* pane = new QWidget(parent);
@@ -24,15 +24,7 @@ QWidget* makeOrientationPane(nnc::SliceOrientation orientation,
   QLabel* heading = new QLabel(title, pane);
   heading->setAlignment(Qt::AlignCenter);
 
-  nnc::VolumeUploadSurface* surface =
-      new nnc::VolumeUploadSurface(orientation, pane);
-      
-  QObject::connect(
-      surface,
-      &nnc::VolumeUploadSurface::statusChanged,
-      statusLabel,
-      &QLabel::setText);
-
+  surface->setParent(pane);
   paneLayout->addWidget(heading);
   paneLayout->addWidget(surface, 1);
   return pane;
@@ -61,21 +53,35 @@ MainWindow::MainWindow(QWidget* parent)
   statusLabel->setAlignment(Qt::AlignCenter);
   statusLabel->setWordWrap(true);
 
+  nnc::VolumeUploadSurface* axial =
+      new nnc::VolumeUploadSurface(nnc::SliceOrientation::Axial);
+  nnc::VolumeUploadSurface* coronal =
+      new nnc::VolumeUploadSurface(nnc::SliceOrientation::Coronal);
+  nnc::VolumeUploadSurface* sagittal =
+      new nnc::VolumeUploadSurface(nnc::SliceOrientation::Sagittal);
+
+  QObject::connect(axial, &nnc::VolumeUploadSurface::statusChanged, statusLabel, &QLabel::setText);
+  QObject::connect(coronal, &nnc::VolumeUploadSurface::statusChanged, statusLabel, &QLabel::setText);
+  QObject::connect(sagittal, &nnc::VolumeUploadSurface::statusChanged, statusLabel, &QLabel::setText);
+
+  const auto syncFocus = [axial, coronal, sagittal](const QVector3D& focusNorm) {
+    axial->setFocusNorm(focusNorm);
+    coronal->setFocusNorm(focusNorm);
+    sagittal->setFocusNorm(focusNorm);
+  };
+  QObject::connect(axial, &nnc::VolumeUploadSurface::focusChanged, central, syncFocus);
+  QObject::connect(coronal, &nnc::VolumeUploadSurface::focusChanged, central, syncFocus);
+  QObject::connect(sagittal, &nnc::VolumeUploadSurface::focusChanged, central, syncFocus);
+
   QWidget* mprRow = new QWidget(central);
   QHBoxLayout* mprLayout = new QHBoxLayout(mprRow);
   mprLayout->setContentsMargins(0, 0, 0, 0);
   mprLayout->addWidget(
-      nnc::detail::makeOrientationPane(
-          nnc::SliceOrientation::Axial, QStringLiteral("Axial"), statusLabel, mprRow),
-      1);
+      nnc::detail::makeOrientationPane(axial, QStringLiteral("Axial"), mprRow), 1);
   mprLayout->addWidget(
-      nnc::detail::makeOrientationPane(
-          nnc::SliceOrientation::Coronal, QStringLiteral("Coronal"), statusLabel, mprRow),
-      1);
+      nnc::detail::makeOrientationPane(coronal, QStringLiteral("Coronal"), mprRow), 1);
   mprLayout->addWidget(
-      nnc::detail::makeOrientationPane(
-          nnc::SliceOrientation::Sagittal, QStringLiteral("Sagittal"), statusLabel, mprRow),
-      1);
+      nnc::detail::makeOrientationPane(sagittal, QStringLiteral("Sagittal"), mprRow), 1);
 
   layout->addWidget(statusLabel);
   layout->addWidget(mprRow, 1);

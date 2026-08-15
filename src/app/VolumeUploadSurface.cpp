@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QMatrix4x4>
 #include <QTextStream>
+#include <QVector2D>
 
 #include <algorithm>
 #include <cstdlib>
@@ -123,6 +124,7 @@ VolumeUploadSurface::VolumeUploadSurface(SliceOrientation orientation, QWidget* 
   , orientation_(orientation)
 {
   this->setMinimumSize(280, 280);
+  this->setMouseTracking(false);
 }
 
 VolumeUploadSurface::~VolumeUploadSurface()
@@ -131,6 +133,82 @@ VolumeUploadSurface::~VolumeUploadSurface()
   this->destroyGlResources();
   this->texture_.destroy();
   this->doneCurrent();
+}
+
+void VolumeUploadSurface::setFocusNorm(const QVector3D& focusNorm)
+{
+  const QVector3D clamped(
+      std::clamp(focusNorm.x(), 0.f, 1.f),
+      std::clamp(focusNorm.y(), 0.f, 1.f),
+      std::clamp(focusNorm.z(), 0.f, 1.f));
+  if (this->focusNorm_ == clamped) {
+    return;
+  }
+  this->focusNorm_ = clamped;
+  this->update();
+}
+
+float VolumeUploadSurface::sliceNorm() const
+{
+  if (this->orientation_ == nnc::SliceOrientation::Axial) {
+    return this->focusNorm_.z();
+  }
+  if (this->orientation_ == nnc::SliceOrientation::Coronal) {
+    return this->focusNorm_.y();
+  }
+  return this->focusNorm_.x();
+}
+
+QVector2D VolumeUploadSurface::crossUv() const
+{
+  if (this->orientation_ == nnc::SliceOrientation::Axial) {
+    return QVector2D(this->focusNorm_.x(), this->focusNorm_.y());
+  }
+  if (this->orientation_ == nnc::SliceOrientation::Coronal) {
+    return QVector2D(this->focusNorm_.x(), this->focusNorm_.z());
+  }
+  return QVector2D(this->focusNorm_.y(), this->focusNorm_.z());
+}
+
+void VolumeUploadSurface::applyPointer(const QPoint& pos)
+{
+  if (!this->pipelineReady_ || this->width() <= 0 || this->height() <= 0) {
+    return;
+  }
+
+  float u = static_cast<float>(pos.x()) / static_cast<float>(this->width());
+  float v = 1.f - static_cast<float>(pos.y()) / static_cast<float>(this->height());
+  u = std::clamp(u, 0.f, 1.f);
+  v = std::clamp(v, 0.f, 1.f);
+
+  QVector3D next = this->focusNorm_;
+  if (this->orientation_ == nnc::SliceOrientation::Axial) {
+    next.setX(u);
+    next.setY(v);
+  } else if (this->orientation_ == nnc::SliceOrientation::Coronal) {
+    next.setX(u);
+    next.setZ(v);
+  } else {
+    next.setY(u);
+    next.setZ(v);
+  }
+  emit this->focusChanged(next);
+}
+
+void VolumeUploadSurface::mousePressEvent(QMouseEvent* event)
+{
+  if (event->button() == Qt::LeftButton) {
+    this->applyPointer(event->pos());
+  }
+  QOpenGLWidget::mousePressEvent(event);
+}
+
+void VolumeUploadSurface::mouseMoveEvent(QMouseEvent* event)
+{
+  if (event->buttons() & Qt::LeftButton) {
+    this->applyPointer(event->pos());
+  }
+  QOpenGLWidget::mouseMoveEvent(event);
 }
 
 void VolumeUploadSurface::destroyGlResources()
@@ -153,9 +231,10 @@ void VolumeUploadSurface::uploadSliceUniforms()
   this->program_.setUniformValue("uPatientMin", this->patientMin_);
   this->program_.setUniformValue("uPatientMax", this->patientMax_);
   this->program_.setUniformValue("uOrientation", static_cast<int>(this->orientation_));
-  this->program_.setUniformValue("uSlice", 0.5f);
+  this->program_.setUniformValue("uSlice", this->sliceNorm());
   this->program_.setUniformValue("uWindowLevel", this->windowLevel_);
   this->program_.setUniformValue("uWindowWidth", this->windowWidth_);
+  this->program_.setUniformValue("uCrossUV", this->crossUv());
 }
 
 bool VolumeUploadSurface::buildSlicePipeline(QString* error)
@@ -274,7 +353,7 @@ void VolumeUploadSurface::initializeGL()
 
   emit this->statusChanged(
       QStringLiteral(
-          "Task 8 §6: patient-space MPR with WW/WL.\n"
+          "Task 8 §7a: click/drag to move shared crosshair.\n"
           "Size: %1 × %2 × %3\n"
           "WL: %4  WW: %5\n"
           "Texture id: %6\n"
@@ -305,6 +384,7 @@ void VolumeUploadSurface::paintGL()
   }
 
   this->program_.bind();
+  this->uploadSliceUniforms();
   // every openGL context has texture unit slots
   this->texture_.bind(0);
   this->vao_.bind();

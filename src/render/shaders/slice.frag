@@ -12,6 +12,7 @@ uniform int uOrientation;
 uniform float uSlice;
 uniform float uWindowLevel;
 uniform float uWindowWidth;
+uniform vec2 uCrossUV;
 
 // per pixel value
 in vec2 vUV;
@@ -20,8 +21,6 @@ out vec4 fragColor;
 
 void main()
 {
-  // Build a point on the patient-space mid-plane, then
-  // map to voxel indices with inverse(voxelToImage).
   vec3 patient;
 
   // building world position for given vUV and slice
@@ -49,11 +48,15 @@ void main()
   vec3 texCoord = (voxelH.xyz + 0.5) / uVolSize;
   if (any(lessThan(texCoord, vec3(0.0))) || any(greaterThan(texCoord, vec3(1.0)))) {
     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
-    return;
+  } else {
+    float intensity = texture(uVolume, texCoord).r;
+    float g = clamp((intensity - (uWindowLevel - 0.5 * uWindowWidth)) / uWindowWidth, 0.0, 1.0);
+    fragColor = vec4(g, g, g, 1.0);
   }
 
-  float intensity = texture(uVolume, texCoord).r;
-  // WW/WL: map [WL - WW/2, WL + WW/2] → [0, 1]
-  float g = clamp((intensity - (uWindowLevel - 0.5 * uWindowWidth)) / uWindowWidth, 0.0, 1.0);
-  fragColor = vec4(g, g, g, 1.0);
+  // Shared focus crosshair in view UV (matches patient-axis layout above).
+  const float halfWidth = 0.003;
+  if (abs(vUV.x - uCrossUV.x) < halfWidth || abs(vUV.y - uCrossUV.y) < halfWidth) {
+    fragColor = vec4(1.0, 0.85, 0.15, 1.0);
+  }
 }
