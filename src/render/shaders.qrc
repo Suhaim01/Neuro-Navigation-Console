@@ -1,0 +1,7 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/nnc">
+    <file>shaders/slice.vert</file>
+    <file>shaders/slice.frag</file>
+  </qresource>
+</RCC>

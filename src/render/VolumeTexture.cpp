@@ -64,6 +64,14 @@ void VolumeTexture::destroy()
   }
 }
 
+void VolumeTexture::bind(int textureUnit) const
+{
+  if (this->texture_ == nullptr) {
+    return;
+  }
+  this->texture_->bind(textureUnit);
+}
+
 int VolumeTexture::width() const
 {
   return this->texture_ != nullptr ? this->texture_->width() : 0;

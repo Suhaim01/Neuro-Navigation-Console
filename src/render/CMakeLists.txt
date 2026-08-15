@@ -1,6 +1,7 @@
 add_library(nnc_render
   VolumeTexture.cpp
   VolumeTexture.h
+  shaders.qrc
 )
 
 target_include_directories(nnc_render PUBLIC

@@ -11,7 +11,7 @@ MainWindow::MainWindow(QWidget* parent)
   : QMainWindow(parent)
 {
   this->setWindowTitle(QStringLiteral("Neuro-Navigation-Console"));
-  this->resize(960, 640);
+  this->resize(960, 720);
 
   QSurfaceFormat format;
   format.setDepthBufferSize(24);
@@ -33,11 +33,8 @@ MainWindow::MainWindow(QWidget* parent)
   nnc::VolumeUploadSurface* uploadSurface =
       new nnc::VolumeUploadSurface(statusLabel, central);
 
-  layout->addStretch();
-  layout->addWidget(title);
   layout->addWidget(statusLabel);
-  layout->addWidget(uploadSurface, 0, Qt::AlignCenter);
-  layout->addStretch();
+  layout->addWidget(uploadSurface, 1);
 
   this->setCentralWidget(central);
 }

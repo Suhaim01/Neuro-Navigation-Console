@@ -9,7 +9,7 @@ class QOpenGLTexture;
 namespace nnc {
 
 // GPU-resident volume as a single-channel 3D texture (sampler3D / R32F).
-// Requires a current QOpenGLContext when upload()/destroy() are called.
+// Requires a current QOpenGLContext when upload()/destroy()/bind() are called.
 class VolumeTexture {
 public:
   VolumeTexture() = default;
@@ -20,6 +20,7 @@ public:
 
   bool upload(const NiftiVolume& volume, QString* error = nullptr);
   void destroy();
+  void bind(int textureUnit = 0) const;
 
   int width() const;
   int height() const;

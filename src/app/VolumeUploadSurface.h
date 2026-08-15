@@ -2,14 +2,18 @@
 
 #include "render/VolumeTexture.h"
 
+#include <QOpenGLBuffer>
+#include <QOpenGLFunctions>
+#include <QOpenGLShaderProgram>
+#include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
 
 class QLabel;
 
 namespace nnc {
 
-// Owns a GL context and uploads the configured NIfTI as a 3D texture (Task 7).
-class VolumeUploadSurface : public QOpenGLWidget
+// Visible GL surface: uploads volume (Task 7) and draws one mid-slice (Task 8 §1–3).
+class VolumeUploadSurface : public QOpenGLWidget, protected QOpenGLFunctions
 {
 public:
   explicit VolumeUploadSurface(QLabel* status, QWidget* parent = nullptr);
@@ -18,10 +22,19 @@ public:
 protected:
   void initializeGL() override;
   void paintGL() override;
+  void resizeGL(int w, int h) override;
 
 private:
+  bool buildSlicePipeline(QString* error);
+  void destroyGlResources();
+
   VolumeTexture texture_;
   QLabel* status_ = nullptr;
+
+  QOpenGLShaderProgram program_;
+  QOpenGLVertexArrayObject vao_;
+  QOpenGLBuffer vbo_{QOpenGLBuffer::VertexBuffer};
+  bool pipelineReady_ = false;
 };
 
 }  // namespace nnc
