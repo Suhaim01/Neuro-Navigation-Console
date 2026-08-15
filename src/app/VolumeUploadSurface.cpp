@@ -182,9 +182,9 @@ void VolumeUploadSurface::applyPointer(const QPoint& pos)
   screenU = std::clamp(screenU, 0.f, 1.f);
   screenV = std::clamp(screenV, 0.f, 1.f);
 
-  // Inverse of view-center zoom used in the fragment shader.
-  const float u = std::clamp(0.5f + (screenU - 0.5f) / this->zoom_, 0.f, 1.f);
-  const float v = std::clamp(0.5f + (screenV - 0.5f) / this->zoom_, 0.f, 1.f);
+  // Inverse of shader: uvSample = pan + (screen - 0.5) / zoom
+  const float u = std::clamp(this->viewCenterUv_.x() + (screenU - 0.5f) / this->zoom_, 0.f, 1.f);
+  const float v = std::clamp(this->viewCenterUv_.y() + (screenV - 0.5f) / this->zoom_, 0.f, 1.f);
 
   QVector3D next = this->focusNorm_;
   if (this->orientation_ == nnc::SliceOrientation::Axial) {
@@ -200,10 +200,34 @@ void VolumeUploadSurface::applyPointer(const QPoint& pos)
   emit this->focusChanged(next);
 }
 
+void VolumeUploadSurface::applyPanDrag(const QPoint& pos)
+{
+  if (!this->pipelineReady_ || this->width() <= 0 || this->height() <= 0) {
+    return;
+  }
+
+  const float dxScreen =
+      static_cast<float>(pos.x() - this->lastViewCenterPos_.x()) /
+      static_cast<float>(this->width());
+  // Screen y is top-down; patient v is bottom-up.
+  const float dyScreen =
+      -static_cast<float>(pos.y() - this->lastViewCenterPos_.y()) /
+      static_cast<float>(this->height());
+  this->lastViewCenterPos_ = pos;
+
+  // Grab-pan: content follows the cursor.
+  this->viewCenterUv_.setX(std::clamp(this->viewCenterUv_.x() - dxScreen / this->zoom_, 0.f, 1.f));
+  this->viewCenterUv_.setY(std::clamp(this->viewCenterUv_.y() - dyScreen / this->zoom_, 0.f, 1.f));
+  this->update();
+}
+
 void VolumeUploadSurface::mousePressEvent(QMouseEvent* event)
 {
   if (event->button() == Qt::LeftButton) {
     this->applyPointer(event->pos());
+  } else if (event->button() == Qt::MiddleButton) {
+    this->panning_ = true;
+    this->lastViewCenterPos_ = event->pos();
   }
   QOpenGLWidget::mousePressEvent(event);
 }
@@ -212,8 +236,18 @@ void VolumeUploadSurface::mouseMoveEvent(QMouseEvent* event)
 {
   if (event->buttons() & Qt::LeftButton) {
     this->applyPointer(event->pos());
+  } else if (this->panning_ && (event->buttons() & Qt::MiddleButton)) {
+    this->applyPanDrag(event->pos());
   }
   QOpenGLWidget::mouseMoveEvent(event);
+}
+
+void VolumeUploadSurface::mouseReleaseEvent(QMouseEvent* event)
+{
+  if (event->button() == Qt::MiddleButton) {
+    this->panning_ = false;
+  }
+  QOpenGLWidget::mouseReleaseEvent(event);
 }
 
 void VolumeUploadSurface::wheelEvent(QWheelEvent* event)
@@ -255,6 +289,7 @@ void VolumeUploadSurface::uploadSliceUniforms()
   this->program_.setUniformValue("uWindowWidth", this->windowWidth_);
   this->program_.setUniformValue("uCrossUV", this->crossUv());
   this->program_.setUniformValue("uZoom", this->zoom_);
+  this->program_.setUniformValue("uViewCenterUv", this->viewCenterUv_);
 }
 
 bool VolumeUploadSurface::buildSlicePipeline(QString* error)
@@ -373,7 +408,7 @@ void VolumeUploadSurface::initializeGL()
 
   emit this->statusChanged(
       QStringLiteral(
-          "Task 8 §7b: wheel to zoom (per pane); click/drag for crosshair.\n"
+          "Task 8 §7c: middle-drag to pan; wheel zoom; left-drag crosshair.\n"
           "Size: %1 × %2 × %3\n"
           "WL: %4  WW: %5\n"
           "Texture id: %6\n"

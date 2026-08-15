@@ -45,6 +45,7 @@ protected:
   void resizeGL(int w, int h) override;
   void mousePressEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
   void wheelEvent(QWheelEvent* event) override;
 
 private:
@@ -52,6 +53,7 @@ private:
   void destroyGlResources();
   void uploadSliceUniforms();
   void applyPointer(const QPoint& pos);
+  void applyPanDrag(const QPoint& pos);
   float sliceNorm() const;
   QVector2D crossUv() const;
 
@@ -66,6 +68,10 @@ private:
   float windowWidth_ = 1.f;
   QVector3D focusNorm_{0.5f, 0.5f, 0.5f};
   float zoom_ = 1.f;
+  // Patient-normalized UV at screen center (default mid-volume).
+  QVector2D viewCenterUv_{0.5f, 0.5f};
+  QPoint lastViewCenterPos_;
+  bool panning_ = false;
 
   QOpenGLShaderProgram program_;
   QOpenGLVertexArrayObject vao_;

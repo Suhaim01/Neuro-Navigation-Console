@@ -14,6 +14,8 @@ uniform float uWindowLevel;
 uniform float uWindowWidth;
 uniform vec2 uCrossUV;
 uniform float uZoom;
+// Patient-normalized UV that sits at screen center.
+uniform vec2 uViewCenterUv;
 
 // per pixel value
 in vec2 vUV;
@@ -22,8 +24,8 @@ out vec4 fragColor;
 
 void main()
 {
-  // Zoom about view center: map screen UV → patient-normalized UV.
-  vec2 uvSample = 0.5 + (vUV - vec2(0.5)) / uZoom;
+  // Map screen UV → patient-normalized UV (zoom about pan).
+  vec2 uvSample = uViewCenterUv + (vUV - vec2(0.5)) / uZoom;
 
   vec3 patient;
 
@@ -58,8 +60,8 @@ void main()
     fragColor = vec4(g, g, g, 1.0);
   }
 
-  // Crosshair in screen UV (focus patient UV projected through zoom).
-  vec2 crossScreen = 0.5 + (uCrossUV - vec2(0.5)) * uZoom;
+  // Crosshair in screen UV.
+  vec2 crossScreen = 0.5 + (uCrossUV - uViewCenterUv) * uZoom;
   const float halfWidth = 0.003;
   if (abs(vUV.x - crossScreen.x) < halfWidth || abs(vUV.y - crossScreen.y) < halfWidth) {
     fragColor = vec4(1.0, 0.85, 0.15, 1.0);
