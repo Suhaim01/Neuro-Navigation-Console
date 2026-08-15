@@ -10,6 +10,8 @@ uniform vec3 uPatientMax;
 // 0 = axial (fixed patient z), 1 = coronal (fixed y), 2 = sagittal (fixed x)
 uniform int uOrientation;
 uniform float uSlice;
+uniform float uWindowLevel;
+uniform float uWindowWidth;
 
 // per pixel value
 in vec2 vUV;
@@ -51,7 +53,7 @@ void main()
   }
 
   float intensity = texture(uVolume, texCoord).r;
-  // Crude display scale until WW/WL.
-  float g = clamp(intensity / 255.0, 0.0, 1.0);
+  // WW/WL: map [WL - WW/2, WL + WW/2] → [0, 1]
+  float g = clamp((intensity - (uWindowLevel - 0.5 * uWindowWidth)) / uWindowWidth, 0.0, 1.0);
   fragColor = vec4(g, g, g, 1.0);
 }

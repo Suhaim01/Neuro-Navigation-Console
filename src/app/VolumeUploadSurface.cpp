@@ -98,6 +98,24 @@ void patientAabb(const nnc::NiftiVolume& volume, QVector3D& outMin, QVector3D& o
   }
 }
 
+void intensityRange(const nnc::NiftiVolume& volume, float& outMin, float& outMax)
+{
+  if (volume.voxels.empty()) {
+    outMin = 0.f;
+    outMax = 1.f;
+    return;
+  }
+  outMin = volume.voxels.front();
+  outMax = volume.voxels.front();
+  for (float v : volume.voxels) {
+    outMin = std::min(outMin, v);
+    outMax = std::max(outMax, v);
+  }
+  if (outMax <= outMin) {
+    outMax = outMin + 1.f;
+  }
+}
+
 }  // namespace detail
 
 VolumeUploadSurface::VolumeUploadSurface(SliceOrientation orientation, QWidget* parent)
@@ -136,6 +154,8 @@ void VolumeUploadSurface::uploadSliceUniforms()
   this->program_.setUniformValue("uPatientMax", this->patientMax_);
   this->program_.setUniformValue("uOrientation", static_cast<int>(this->orientation_));
   this->program_.setUniformValue("uSlice", 0.5f);
+  this->program_.setUniformValue("uWindowLevel", this->windowLevel_);
+  this->program_.setUniformValue("uWindowWidth", this->windowWidth_);
 }
 
 bool VolumeUploadSurface::buildSlicePipeline(QString* error)
@@ -235,6 +255,12 @@ void VolumeUploadSurface::initializeGL()
                                
   nnc::detail::patientAabb(volume, this->patientMin_, this->patientMax_);
 
+  float intensityMin = 0.f;
+  float intensityMax = 1.f;
+  nnc::detail::intensityRange(volume, intensityMin, intensityMax);
+  this->windowWidth_ = intensityMax - intensityMin;
+  this->windowLevel_ = 0.5f * (intensityMin + intensityMax);
+
   QString glErr;
   if (!this->texture_.upload(volume, &glErr)) {
     emit this->statusChanged(QStringLiteral("GL 3D texture upload failed:\n%1").arg(glErr));
@@ -248,14 +274,17 @@ void VolumeUploadSurface::initializeGL()
 
   emit this->statusChanged(
       QStringLiteral(
-          "Task 8 §4–5: patient-space axial / coronal / sagittal mid-slices.\n"
+          "Task 8 §6: patient-space MPR with WW/WL.\n"
           "Size: %1 × %2 × %3\n"
-          "Texture id: %4\n"
-          "Source: %5\n\n"
+          "WL: %4  WW: %5\n"
+          "Texture id: %6\n"
+          "Source: %7\n\n"
           "Research software. Not a medical device. Not for clinical use.")
           .arg(this->texture_.width())
           .arg(this->texture_.height())
           .arg(this->texture_.depth())
+          .arg(this->windowLevel_)
+          .arg(this->windowWidth_)
           .arg(this->texture_.textureId())
           .arg(path));
 }

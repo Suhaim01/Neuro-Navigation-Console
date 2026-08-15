@@ -49,6 +49,8 @@ private:
   QVector3D volSize_;
   QVector3D patientMin_;
   QVector3D patientMax_;
+  float windowLevel_ = 0.f;
+  float windowWidth_ = 1.f;
 
   QOpenGLShaderProgram program_;
   QOpenGLVertexArrayObject vao_;
