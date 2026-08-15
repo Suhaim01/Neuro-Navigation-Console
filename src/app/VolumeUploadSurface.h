@@ -12,6 +12,7 @@
 #include <QString>
 #include <QVector2D>
 #include <QVector3D>
+#include <QWheelEvent>
 
 namespace nnc {
 
@@ -44,6 +45,7 @@ protected:
   void resizeGL(int w, int h) override;
   void mousePressEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
+  void wheelEvent(QWheelEvent* event) override;
 
 private:
   bool buildSlicePipeline(QString* error);
@@ -63,6 +65,7 @@ private:
   float windowLevel_ = 0.f;
   float windowWidth_ = 1.f;
   QVector3D focusNorm_{0.5f, 0.5f, 0.5f};
+  float zoom_ = 1.f;
 
   QOpenGLShaderProgram program_;
   QOpenGLVertexArrayObject vao_;

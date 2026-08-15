@@ -9,6 +9,7 @@
 #include <QVector2D>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 
@@ -176,10 +177,14 @@ void VolumeUploadSurface::applyPointer(const QPoint& pos)
     return;
   }
 
-  float u = static_cast<float>(pos.x()) / static_cast<float>(this->width());
-  float v = 1.f - static_cast<float>(pos.y()) / static_cast<float>(this->height());
-  u = std::clamp(u, 0.f, 1.f);
-  v = std::clamp(v, 0.f, 1.f);
+  float screenU = static_cast<float>(pos.x()) / static_cast<float>(this->width());
+  float screenV = 1.f - static_cast<float>(pos.y()) / static_cast<float>(this->height());
+  screenU = std::clamp(screenU, 0.f, 1.f);
+  screenV = std::clamp(screenV, 0.f, 1.f);
+
+  // Inverse of view-center zoom used in the fragment shader.
+  const float u = std::clamp(0.5f + (screenU - 0.5f) / this->zoom_, 0.f, 1.f);
+  const float v = std::clamp(0.5f + (screenV - 0.5f) / this->zoom_, 0.f, 1.f);
 
   QVector3D next = this->focusNorm_;
   if (this->orientation_ == nnc::SliceOrientation::Axial) {
@@ -211,6 +216,20 @@ void VolumeUploadSurface::mouseMoveEvent(QMouseEvent* event)
   QOpenGLWidget::mouseMoveEvent(event);
 }
 
+void VolumeUploadSurface::wheelEvent(QWheelEvent* event)
+{
+  const float steps = static_cast<float>(event->angleDelta().y()) / 120.f;
+  if (steps == 0.f) {
+    QOpenGLWidget::wheelEvent(event);
+    return;
+  }
+
+  const float factor = std::pow(1.1f, steps);
+  this->zoom_ = std::clamp(this->zoom_ * factor, 0.25f, 32.f);
+  this->update();
+  event->accept();
+}
+
 void VolumeUploadSurface::destroyGlResources()
 {
   this->pipelineReady_ = false;
@@ -235,6 +254,7 @@ void VolumeUploadSurface::uploadSliceUniforms()
   this->program_.setUniformValue("uWindowLevel", this->windowLevel_);
   this->program_.setUniformValue("uWindowWidth", this->windowWidth_);
   this->program_.setUniformValue("uCrossUV", this->crossUv());
+  this->program_.setUniformValue("uZoom", this->zoom_);
 }
 
 bool VolumeUploadSurface::buildSlicePipeline(QString* error)
@@ -353,7 +373,7 @@ void VolumeUploadSurface::initializeGL()
 
   emit this->statusChanged(
       QStringLiteral(
-          "Task 8 §7a: click/drag to move shared crosshair.\n"
+          "Task 8 §7b: wheel to zoom (per pane); click/drag for crosshair.\n"
           "Size: %1 × %2 × %3\n"
           "WL: %4  WW: %5\n"
           "Texture id: %6\n"

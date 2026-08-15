@@ -13,6 +13,7 @@ uniform float uSlice;
 uniform float uWindowLevel;
 uniform float uWindowWidth;
 uniform vec2 uCrossUV;
+uniform float uZoom;
 
 // per pixel value
 in vec2 vUV;
@@ -21,27 +22,30 @@ out vec4 fragColor;
 
 void main()
 {
+  // Zoom about view center: map screen UV → patient-normalized UV.
+  vec2 uvSample = 0.5 + (vUV - vec2(0.5)) / uZoom;
+
   vec3 patient;
 
   // building world position for given vUV and slice
   if (uOrientation == 0) {
     // Axial: fixed z
     patient = vec3(
-        mix(uPatientMin.x, uPatientMax.x, vUV.x),
-        mix(uPatientMin.y, uPatientMax.y, vUV.y),
+        mix(uPatientMin.x, uPatientMax.x, uvSample.x),
+        mix(uPatientMin.y, uPatientMax.y, uvSample.y),
         mix(uPatientMin.z, uPatientMax.z, uSlice));
   } else if (uOrientation == 1) {
     // Coronal: fixed y
     patient = vec3(
-        mix(uPatientMin.x, uPatientMax.x, vUV.x),
+        mix(uPatientMin.x, uPatientMax.x, uvSample.x),
         mix(uPatientMin.y, uPatientMax.y, uSlice),
-        mix(uPatientMin.z, uPatientMax.z, vUV.y));
+        mix(uPatientMin.z, uPatientMax.z, uvSample.y));
   } else {
     // Sagittal: fixed x
     patient = vec3(
         mix(uPatientMin.x, uPatientMax.x, uSlice),
-        mix(uPatientMin.y, uPatientMax.y, vUV.x),
-        mix(uPatientMin.z, uPatientMax.z, vUV.y));
+        mix(uPatientMin.y, uPatientMax.y, uvSample.x),
+        mix(uPatientMin.z, uPatientMax.z, uvSample.y));
   }
 
   vec4 voxelH = uVoxelFromImage * vec4(patient, 1.0);
@@ -54,9 +58,10 @@ void main()
     fragColor = vec4(g, g, g, 1.0);
   }
 
-  // Shared focus crosshair in view UV (matches patient-axis layout above).
+  // Crosshair in screen UV (focus patient UV projected through zoom).
+  vec2 crossScreen = 0.5 + (uCrossUV - vec2(0.5)) * uZoom;
   const float halfWidth = 0.003;
-  if (abs(vUV.x - uCrossUV.x) < halfWidth || abs(vUV.y - uCrossUV.y) < halfWidth) {
+  if (abs(vUV.x - crossScreen.x) < halfWidth || abs(vUV.y - crossScreen.y) < halfWidth) {
     fragColor = vec4(1.0, 0.85, 0.15, 1.0);
   }
 }
