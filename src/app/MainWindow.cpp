@@ -1,6 +1,9 @@
 #include "app/MainWindow.h"
 
+#include "app/VolumeUploadSurface.h"
+
 #include <QLabel>
+#include <QSurfaceFormat>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -10,24 +13,30 @@ MainWindow::MainWindow(QWidget* parent)
   this->setWindowTitle(QStringLiteral("Neuro-Navigation-Console"));
   this->resize(960, 640);
 
-  auto* central = new QWidget(this);
-  auto* layout = new QVBoxLayout(central);
+  QSurfaceFormat format;
+  format.setDepthBufferSize(24);
+  format.setVersion(3, 3);
+  format.setProfile(QSurfaceFormat::CoreProfile);
+  QSurfaceFormat::setDefaultFormat(format);
 
-  auto* title = new QLabel(QStringLiteral("Neuro-Navigation-Console"), central);
+  QWidget* central = new QWidget(this);
+  QVBoxLayout* layout = new QVBoxLayout(central);
+
+  QLabel* title = new QLabel(QStringLiteral("Neuro-Navigation-Console"), central);
   title->setAlignment(Qt::AlignCenter);
 
-  auto* stub = new QLabel(
-      QStringLiteral(
-          "Stub console — Day 1 skeleton.\n"
-          "MPR views and tracking land in later tasks.\n\n"
-          "Research software. Not a medical device. Not for clinical use."),
-      central);
-  stub->setAlignment(Qt::AlignCenter);
-  stub->setWordWrap(true);
+  QLabel* statusLabel =
+      new QLabel(QStringLiteral("Creating OpenGL context and uploading volume…"), central);
+  statusLabel->setAlignment(Qt::AlignCenter);
+  statusLabel->setWordWrap(true);
+
+  nnc::VolumeUploadSurface* uploadSurface =
+      new nnc::VolumeUploadSurface(statusLabel, central);
 
   layout->addStretch();
   layout->addWidget(title);
-  layout->addWidget(stub);
+  layout->addWidget(statusLabel);
+  layout->addWidget(uploadSurface, 0, Qt::AlignCenter);
   layout->addStretch();
 
   this->setCentralWidget(central);

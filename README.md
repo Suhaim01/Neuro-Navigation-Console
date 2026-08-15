@@ -40,7 +40,7 @@ flowchart TD
   wd -->|"degrade + alert"| scene
   pairs["canned fiducial pairs"] --> reg["PairedPointRegistration (SVD)"]
   reg -->|"trackerToImage + FRE"| scene
-  nifti["NiftiLoader (sform/qform)"] --> vol["VolumeTexture (sampler3D)"]
+  nifti["NiftiLoader (sform/qform)"] --> vol["VolumeTexture (R32F sampler3D)"]
   vol --> views
   scene["SceneModel (single source of truth)"]
   scene --> views["MprView x3 + ProbeEyeView (QOpenGLWidget)"]
@@ -51,7 +51,7 @@ flowchart TD
 
 | Component | Responsibility |
 | --- | --- |
-| `NiftiLoader` + `VolumeTexture` | Parse NIfTI-1 (`data/MRHead.nii`), derive `voxelToImage` from sform/qform, upload voxels as a GL 3D texture |
+| `NiftiLoader` + `VolumeTexture` | Parse NIfTI-1, derive `voxelToImage` from sform/qform, upload voxels as a GL 3D texture. Volume path comes from `NNC_VOLUME` (see below). |
 | `SceneModel` | The only mutable state: volume, registration, plan, live pose, FRE, alerts, telemetry |
 | `MprView` x3 | Orthogonal slices with zoom/pan and a linked crosshair |
 | `IgtlReceiver` + `navsim` | TRAJECTORY on connect, then tool poses in tracker space; received off the GUI thread |
@@ -85,3 +85,8 @@ withheld.
 ## Build and test
 
 See [docs/BUILD.md](docs/BUILD.md).
+
+### Volume path (`NNC_VOLUME`)
+
+Path to the NIfTI `.nii` to load (relative to the working directory; run from the repo root).
+Set it in committed [`nnc.env`](nnc.env) (`NNC_VOLUME=data/MRHead.nii`) or override with the process env var. Unset in both → fail. The file under `data/` is gitignored.

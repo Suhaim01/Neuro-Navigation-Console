@@ -2,6 +2,8 @@ add_executable(nnc_console
   main.cpp
   MainWindow.cpp
   MainWindow.h
+  VolumeUploadSurface.cpp
+  VolumeUploadSurface.h
 )
 
 target_compile_definitions(nnc_console PRIVATE
@@ -10,6 +12,7 @@ target_compile_definitions(nnc_console PRIVATE
 
 target_link_libraries(nnc_console PRIVATE
   nnc_io
+  nnc_render
   Qt5::Widgets
   Qt5::OpenGL
 )

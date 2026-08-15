@@ -6,7 +6,7 @@
 - C++17 compiler (GCC or Clang)
 - Qt 5 (`Widgets`, `OpenGL`, `Test`) — e.g. Ubuntu: `qtbase5-dev` `libqt5opengl5-dev`
 
-Optional local volume (gitignored): place `MRHead.nii` under `data/`.
+Optional local volume (gitignored under `data/`). Default path is `NNC_VOLUME` in the committed root file `nnc.env` (override with the process env var of the same name).
 
 ## Configure and build
 
@@ -27,8 +27,16 @@ Binary: `build/nnc_console` (or `build-debug/nnc_console`).
 
 ## Run the console
 
+From the repo root (so `nnc.env` and `data/` resolve):
+
 ```bash
 ./build/nnc_console
+```
+
+Point at another volume by editing `nnc.env`, or:
+
+```bash
+NNC_VOLUME=/path/to/other.nii ./build/nnc_console
 ```
 
 ## Tests
