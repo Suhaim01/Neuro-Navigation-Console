@@ -15,6 +15,8 @@ struct Mat4 {
   float& operator()(int row, int col) { return this->m[static_cast<size_t>(row * 4 + col)]; }
 
   Mat4 operator*(const Mat4& other) const;
+  // Affine inverse (last row assumed 0,0,0,1). Returns false if singular.
+  bool inverted(Mat4& out) const;
   void transformPoint(float i, float j, float k, float& x, float& y, float& z) const;
 };
 

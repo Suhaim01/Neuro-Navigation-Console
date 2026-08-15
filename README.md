@@ -2,7 +2,10 @@
 
 [![CI](https://github.com/Suhaim01/Neuro-Navigation-Console/actions/workflows/ci.yml/badge.svg)](https://github.com/Suhaim01/Neuro-Navigation-Console/actions/workflows/ci.yml)
 
-Research software. Not a medical device, not for clinical use.
+The main goal of this repo is eventual deployment on ARM hardware in the OR. Local ARM
+hardware was not available during development; [GitHub Actions CI](.github/workflows/ci.yml)
+builds and tests on `ubuntu-24.04-arm` (aarch64) as well as x86_64 so ARM regressions are
+still caught in CI.
 
 An intra-operative neuronavigation console prototype in Qt/C++: a brain MRI volume in
 three synced MPR views, a live OpenIGTLink stream carrying both the planned trajectory

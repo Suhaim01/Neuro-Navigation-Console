@@ -4,9 +4,10 @@
 
 #include <QCoreApplication>
 #include <QFile>
-#include <QLabel>
+#include <QMatrix4x4>
 #include <QTextStream>
 
+#include <algorithm>
 #include <cstdlib>
 #include <string>
 
@@ -57,11 +58,53 @@ QString resolve()
 
 }  // namespace volume_path
 
-VolumeUploadSurface::VolumeUploadSurface(QLabel* status, QWidget* parent)
-  : QOpenGLWidget(parent)
-  , status_(status)
+namespace detail {
+
+// QMatrix4x4(const float*) reads row-major, which is how Mat4 already stores.
+QMatrix4x4 toQMatrix(const nnc::Mat4& M)
 {
-  this->setMinimumSize(400, 400);
+  return QMatrix4x4(M.m.data());
+}
+
+// Axis aligned bounding box
+void patientAabb(const nnc::NiftiVolume& volume, QVector3D& outMin, QVector3D& outMax)
+{
+  const float iCorners[2] = {0.f, static_cast<float>(volume.nx - 1)};
+  const float jCorners[2] = {0.f, static_cast<float>(volume.ny - 1)};
+  const float kCorners[2] = {0.f, static_cast<float>(volume.nz - 1)};
+
+  bool first = true;
+  for (float i : iCorners) {
+    for (float j : jCorners) {
+      for (float k : kCorners) {
+        float x = 0.f;
+        float y = 0.f;
+        float z = 0.f;
+        volume.voxelToImage.transformPoint(i, j, k, x, y, z);
+        if (first) {
+          outMin = QVector3D(x, y, z);
+          outMax = outMin;
+          first = false;
+        } else {
+          outMin.setX(std::min(outMin.x(), x));
+          outMin.setY(std::min(outMin.y(), y));
+          outMin.setZ(std::min(outMin.z(), z));
+          outMax.setX(std::max(outMax.x(), x));
+          outMax.setY(std::max(outMax.y(), y));
+          outMax.setZ(std::max(outMax.z(), z));
+        }
+      }
+    }
+  }
+}
+
+}  // namespace detail
+
+VolumeUploadSurface::VolumeUploadSurface(SliceOrientation orientation, QWidget* parent)
+  : QOpenGLWidget(parent)
+  , orientation_(orientation)
+{
+  this->setMinimumSize(280, 280);
 }
 
 VolumeUploadSurface::~VolumeUploadSurface()
@@ -82,6 +125,17 @@ void VolumeUploadSurface::destroyGlResources()
     this->vao_.destroy();
   }
   this->program_.removeAllShaders();
+}
+
+void VolumeUploadSurface::uploadSliceUniforms()
+{
+  this->program_.setUniformValue("uVolume", 0);
+  this->program_.setUniformValue("uVoxelFromImage", nnc::detail::toQMatrix(this->voxelFromImage_));
+  this->program_.setUniformValue("uVolSize", this->volSize_);
+  this->program_.setUniformValue("uPatientMin", this->patientMin_);
+  this->program_.setUniformValue("uPatientMax", this->patientMax_);
+  this->program_.setUniformValue("uOrientation", static_cast<int>(this->orientation_));
+  this->program_.setUniformValue("uSlice", 0.5f);
 }
 
 bool VolumeUploadSurface::buildSlicePipeline(QString* error)
@@ -138,7 +192,7 @@ bool VolumeUploadSurface::buildSlicePipeline(QString* error)
   this->program_.setAttributeBuffer(0, GL_FLOAT, 0, 2, 4 * sizeof(float));
   this->program_.enableAttributeArray(1);
   this->program_.setAttributeBuffer(1, GL_FLOAT, 2 * sizeof(float), 2, 4 * sizeof(float));
-  this->program_.setUniformValue("uVolume", 0);
+  this->uploadSliceUniforms();
   this->program_.release();
 
   this->vbo_.release();
@@ -155,54 +209,55 @@ void VolumeUploadSurface::initializeGL()
 
   const QString path = nnc::volume_path::resolve();
   if (path.isEmpty()) {
-    if (this->status_ != nullptr) {
-      this->status_->setText(
-          QStringLiteral(
-              "NNC_VOLUME is not set.\n"
-              "Set it in nnc.env or as a process environment variable."));
-    }
+    emit this->statusChanged(
+        QStringLiteral(
+            "NNC_VOLUME is not set.\n"
+            "Set it in nnc.env or as a process environment variable."));
     return;
   }
 
   nnc::NiftiVolume volume;
   std::string err;
   if (!nnc::NiftiLoader::load(path.toStdString(), volume, &err)) {
-    if (this->status_ != nullptr) {
-      this->status_->setText(
-          QStringLiteral("NIfTI load failed (%1):\n%2").arg(path, QString::fromStdString(err)));
-    }
+    emit this->statusChanged(
+        QStringLiteral("NIfTI load failed (%1):\n%2").arg(path, QString::fromStdString(err)));
     return;
   }
 
+  if (!volume.voxelToImage.inverted(this->voxelFromImage_)) {
+    emit this->statusChanged(QStringLiteral("voxelToImage is singular; cannot invert"));
+    return;
+  }
+  
+  this->volSize_ = QVector3D(static_cast<float>(volume.nx),
+                               static_cast<float>(volume.ny),
+                               static_cast<float>(volume.nz));
+                               
+  nnc::detail::patientAabb(volume, this->patientMin_, this->patientMax_);
+
   QString glErr;
   if (!this->texture_.upload(volume, &glErr)) {
-    if (this->status_ != nullptr) {
-      this->status_->setText(QStringLiteral("GL 3D texture upload failed:\n%1").arg(glErr));
-    }
+    emit this->statusChanged(QStringLiteral("GL 3D texture upload failed:\n%1").arg(glErr));
     return;
   }
 
   if (!this->buildSlicePipeline(&glErr)) {
-    if (this->status_ != nullptr) {
-      this->status_->setText(QStringLiteral("Slice shader pipeline failed:\n%1").arg(glErr));
-    }
+    emit this->statusChanged(QStringLiteral("Slice shader pipeline failed:\n%1").arg(glErr));
     return;
   }
 
-  if (this->status_ != nullptr) {
-    this->status_->setText(
-        QStringLiteral(
-            "Task 8 §1–3: mid-slice sample of GL 3D texture.\n"
-            "Size: %1 × %2 × %3\n"
-            "Texture id: %4\n"
-            "Source: %5\n\n"
-            "Research software. Not a medical device. Not for clinical use.")
-            .arg(this->texture_.width())
-            .arg(this->texture_.height())
-            .arg(this->texture_.depth())
-            .arg(this->texture_.textureId())
-            .arg(path));
-  }
+  emit this->statusChanged(
+      QStringLiteral(
+          "Task 8 §4–5: patient-space axial / coronal / sagittal mid-slices.\n"
+          "Size: %1 × %2 × %3\n"
+          "Texture id: %4\n"
+          "Source: %5\n\n"
+          "Research software. Not a medical device. Not for clinical use.")
+          .arg(this->texture_.width())
+          .arg(this->texture_.height())
+          .arg(this->texture_.depth())
+          .arg(this->texture_.textureId())
+          .arg(path));
 }
 
 void VolumeUploadSurface::resizeGL(int w, int h)

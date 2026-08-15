@@ -293,6 +293,47 @@ Mat4 Mat4::operator*(const Mat4& other) const
   return R;
 }
 
+bool Mat4::inverted(Mat4& out) const
+{
+  const float a00 = (*this)(0, 0);
+  const float a01 = (*this)(0, 1);
+  const float a02 = (*this)(0, 2);
+  const float a10 = (*this)(1, 0);
+  const float a11 = (*this)(1, 1);
+  const float a12 = (*this)(1, 2);
+  const float a20 = (*this)(2, 0);
+  const float a21 = (*this)(2, 1);
+  const float a22 = (*this)(2, 2);
+
+  const float c00 = a11 * a22 - a12 * a21;
+  const float c01 = a12 * a20 - a10 * a22;
+  const float c02 = a10 * a21 - a11 * a20;
+  const float det = a00 * c00 + a01 * c01 + a02 * c02;
+  if (std::fabs(det) < 1e-12f) {
+    return false;
+  }
+  const float invDet = 1.f / det;
+
+  out = Mat4::identity();
+  out(0, 0) = c00 * invDet;
+  out(1, 0) = c01 * invDet;
+  out(2, 0) = c02 * invDet;
+  out(0, 1) = (a02 * a21 - a01 * a22) * invDet;
+  out(1, 1) = (a00 * a22 - a02 * a20) * invDet;
+  out(2, 1) = (a01 * a20 - a00 * a21) * invDet;
+  out(0, 2) = (a01 * a12 - a02 * a11) * invDet;
+  out(1, 2) = (a02 * a10 - a00 * a12) * invDet;
+  out(2, 2) = (a00 * a11 - a01 * a10) * invDet;
+
+  const float tx = (*this)(0, 3);
+  const float ty = (*this)(1, 3);
+  const float tz = (*this)(2, 3);
+  out(0, 3) = -(out(0, 0) * tx + out(0, 1) * ty + out(0, 2) * tz);
+  out(1, 3) = -(out(1, 0) * tx + out(1, 1) * ty + out(1, 2) * tz);
+  out(2, 3) = -(out(2, 0) * tx + out(2, 1) * ty + out(2, 2) * tz);
+  return true;
+}
+
 void Mat4::transformPoint(float i, float j, float k, float& x, float& y, float& z) const
 {
   x = (*this)(0, 0) * i + (*this)(0, 1) * j + (*this)(0, 2) * k + (*this)(0, 3);
