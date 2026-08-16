@@ -1,6 +1,8 @@
 add_library(nnc_io
   NiftiLoader.cpp
   NiftiLoader.h
+  IgtlParser.cpp
+  IgtlParser.h
 )
 
 target_include_directories(nnc_io PUBLIC

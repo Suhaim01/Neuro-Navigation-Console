@@ -13,3 +13,15 @@ target_link_libraries(tst_nifti_loader PRIVATE
 
 add_test(NAME tst_REQ_FRAME_001_NiftiSformMatchesKnownMatrix
          COMMAND $<TARGET_FILE:tst_nifti_loader>)
+
+add_executable(tst_igtl_parse
+  tst_igtl_parse.cpp
+)
+
+target_link_libraries(tst_igtl_parse PRIVATE
+  nnc_io
+  Qt5::Test
+)
+
+add_test(NAME tst_REQ_IGTL_TransformParse
+         COMMAND $<TARGET_FILE:tst_igtl_parse>)
