@@ -579,4 +579,61 @@ bool IgtlParser::packTrajectoryMessage(const Vec3& entry,
   return true;
 }
 
+void IgtlStreamReassembler::append(const std::uint8_t* data, std::size_t size)
+{
+  if (data == nullptr || size == 0) {
+    return;
+  }
+  this->buffer_.insert(this->buffer_.end(), data, data + size);
+}
+
+void IgtlStreamReassembler::clear()
+{
+  this->buffer_.clear();
+}
+
+bool IgtlStreamReassembler::tryExtractMessage(std::vector<std::uint8_t>& messageOut,
+                                              std::string* error)
+{
+  if (this->buffer_.size() < nnc::kIgtlHeaderSize) {
+    if (error) {
+      error->clear();
+    }
+    return false;
+  }
+
+  nnc::IgtlHeader header;
+  std::string headerErr;
+  if (!nnc::IgtlParser::parseHeader(this->buffer_.data(), this->buffer_.size(), header,
+                                    &headerErr)) {
+    nnc::igtl_detail::setError(error, headerErr.c_str());
+    this->buffer_.clear();
+    return false;
+  }
+
+  if (header.bodySize > nnc::IgtlStreamReassembler::kMaxBodySize) {
+    nnc::igtl_detail::setError(error, "claimed body size exceeds maximum");
+    this->buffer_.clear();
+    return false;
+  }
+
+  const std::size_t messageSize =
+      nnc::kIgtlHeaderSize + static_cast<std::size_t>(header.bodySize);
+  if (this->buffer_.size() < messageSize) {
+    if (error) {
+      error->clear();
+    }
+    return false;
+  }
+
+  messageOut.assign(this->buffer_.begin(),
+                    this->buffer_.begin() + static_cast<std::ptrdiff_t>(messageSize));
+  this->buffer_.erase(this->buffer_.begin(),
+                      this->buffer_.begin() + static_cast<std::ptrdiff_t>(messageSize));
+  if (error) {
+    error->clear();
+  }
+  return true;
+}
+
 }  // namespace nnc

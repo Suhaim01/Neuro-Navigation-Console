@@ -113,4 +113,24 @@ public:
                                     std::string* error = nullptr);
 };
 
+// Accumulates partial TCP reads and yields complete OpenIGTLink messages
+// (58-byte header + bodySize bytes). No sockets — caller feeds bytes.
+class IgtlStreamReassembler {
+public:
+  // Reject headers that claim a body larger than this (corrupt / hostile stream).
+  static constexpr std::uint64_t kMaxBodySize = 1024ULL * 1024ULL;
+
+  void append(const std::uint8_t* data, std::size_t size);
+  void clear();
+  std::size_t bufferedBytes() const { return this->buffer_.size(); }
+
+  // true  → messageOut is one complete framed message (header+body).
+  // false → need more bytes (error empty), or framing error (error set; buffer cleared).
+  bool tryExtractMessage(std::vector<std::uint8_t>& messageOut,
+                         std::string* error = nullptr);
+
+private:
+  std::vector<std::uint8_t> buffer_;
+};
+
 }  // namespace nnc

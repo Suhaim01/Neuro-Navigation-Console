@@ -52,6 +52,9 @@ private slots:
   void tdataPackThenParseRoundTrip();
   void trajectoryPackThenParseRoundTrip();
   void trajectoryRejectsWrongType();
+  void streamReassemblesByteByByte();
+  void streamReassemblesTwoMessagesInChunks();
+  void streamRejectsOversizedBody();
 };
 
 void TstREQ_IGTL_TransformParse::packThenParseRoundTrip()
@@ -163,6 +166,101 @@ void TstREQ_IGTL_TransformParse::trajectoryRejectsWrongType()
   std::string err;
   QVERIFY(!nnc::IgtlParser::parseTrajectoryBody(body, sizeof(body), entry, target, &err));
   QVERIFY(err.find("entry+target") != std::string::npos);
+}
+
+void TstREQ_IGTL_TransformParse::streamReassemblesByteByByte()
+{
+  const nnc::Mat4 sent = nnc::test_detail::samplePose();
+  std::vector<std::uint8_t> wired;
+  std::string err;
+  QVERIFY(nnc::IgtlParser::packTransformMessage(sent, "Tool", 0, wired, &err));
+
+  nnc::IgtlStreamReassembler stream;
+  std::vector<std::uint8_t> message;
+  for (std::size_t i = 0; i + 1 < wired.size(); ++i) {
+    stream.append(&wired[i], 1);
+    QVERIFY(!stream.tryExtractMessage(message, &err));
+    QVERIFY(err.empty());
+  }
+  stream.append(&wired.back(), 1);
+  QVERIFY2(stream.tryExtractMessage(message, &err), err.c_str());
+  QCOMPARE(message.size(), wired.size());
+  QCOMPARE(static_cast<int>(stream.bufferedBytes()), 0);
+
+  nnc::Mat4 got = nnc::Mat4::identity();
+  QVERIFY2(nnc::IgtlParser::parseTransformMessage(message.data(), message.size(), got, nullptr,
+                                                  &err),
+           err.c_str());
+  nnc::test_detail::expectMatEqual(got, sent);
+}
+
+void TstREQ_IGTL_TransformParse::streamReassemblesTwoMessagesInChunks()
+{
+  const nnc::Mat4 poseA = nnc::test_detail::samplePose();
+  nnc::Mat4 poseB = nnc::Mat4::identity();
+  poseB(0, 3) = 7.f;
+
+  std::vector<std::uint8_t> msgA;
+  std::vector<std::uint8_t> msgB;
+  std::string err;
+  QVERIFY(nnc::IgtlParser::packTransformMessage(poseA, "A", 1, msgA, &err));
+  QVERIFY(nnc::IgtlParser::packTdataMessage(poseB, "Probe", "B", 2, msgB, &err));
+
+  std::vector<std::uint8_t> streamBytes;
+  streamBytes.insert(streamBytes.end(), msgA.begin(), msgA.end());
+  streamBytes.insert(streamBytes.end(), msgB.begin(), msgB.end());
+
+  nnc::IgtlStreamReassembler stream;
+  // Feed in awkward chunk sizes that split headers and bodies.
+  const std::size_t cuts[] = {10, 40, 30, 50, streamBytes.size()};
+  std::size_t offset = 0;
+  std::vector<std::vector<std::uint8_t>> extracted;
+  for (std::size_t cut : cuts) {
+    if (cut <= offset) {
+      continue;
+    }
+    const std::size_t n = cut - offset;
+    stream.append(streamBytes.data() + offset, n);
+    offset = cut;
+    std::vector<std::uint8_t> message;
+    while (stream.tryExtractMessage(message, &err)) {
+      extracted.push_back(message);
+    }
+    QVERIFY(err.empty());
+  }
+
+  QCOMPARE(static_cast<int>(extracted.size()), 2);
+  QCOMPARE(extracted[0].size(), msgA.size());
+  QCOMPARE(extracted[1].size(), msgB.size());
+
+  nnc::Mat4 gotA = nnc::Mat4::identity();
+  nnc::Mat4 gotB = nnc::Mat4::identity();
+  QVERIFY(nnc::IgtlParser::parseTransformMessage(extracted[0].data(), extracted[0].size(), gotA,
+                                                 nullptr, &err));
+  QVERIFY(nnc::IgtlParser::parseTdataMessage(extracted[1].data(), extracted[1].size(), gotB,
+                                             nullptr, nullptr, 0, &err));
+  nnc::test_detail::expectMatEqual(gotA, poseA);
+  nnc::test_detail::expectMatEqual(gotB, poseB);
+}
+
+void TstREQ_IGTL_TransformParse::streamRejectsOversizedBody()
+{
+  std::vector<std::uint8_t> fake(nnc::kIgtlHeaderSize, 0);
+  // version = 1
+  fake[1] = 1;
+  // bodySize = kMaxBodySize + 1 at offset 42 (big-endian u64)
+  const std::uint64_t huge = nnc::IgtlStreamReassembler::kMaxBodySize + 1ULL;
+  for (int i = 0; i < 8; ++i) {
+    fake[42 + i] = static_cast<std::uint8_t>((huge >> (56 - 8 * i)) & 0xff);
+  }
+
+  nnc::IgtlStreamReassembler stream;
+  stream.append(fake.data(), fake.size());
+  std::vector<std::uint8_t> message;
+  std::string err;
+  QVERIFY(!stream.tryExtractMessage(message, &err));
+  QVERIFY(err.find("maximum") != std::string::npos);
+  QCOMPARE(static_cast<int>(stream.bufferedBytes()), 0);
 }
 
 QTEST_APPLESS_MAIN(TstREQ_IGTL_TransformParse)
