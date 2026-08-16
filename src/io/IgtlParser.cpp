@@ -204,6 +204,80 @@ void setError(std::string* error, const char* message)
   }
 }
 
+void writePaddedField(std::uint8_t* dest, std::size_t destLen, const char* src)
+{
+  std::memset(dest, 0, destLen);
+  if (src == nullptr) {
+    return;
+  }
+  const std::size_t n = std::min(std::strlen(src), destLen);
+  std::memcpy(dest, src, n);
+}
+
+void writeTransform12(std::uint8_t* dest, const Mat4& m)
+{
+  nnc::igtl_detail::writeBeFloat(dest + 0, m(0, 0));
+  nnc::igtl_detail::writeBeFloat(dest + 4, m(1, 0));
+  nnc::igtl_detail::writeBeFloat(dest + 8, m(2, 0));
+  nnc::igtl_detail::writeBeFloat(dest + 12, m(0, 1));
+  nnc::igtl_detail::writeBeFloat(dest + 16, m(1, 1));
+  nnc::igtl_detail::writeBeFloat(dest + 20, m(2, 1));
+  nnc::igtl_detail::writeBeFloat(dest + 24, m(0, 2));
+  nnc::igtl_detail::writeBeFloat(dest + 28, m(1, 2));
+  nnc::igtl_detail::writeBeFloat(dest + 32, m(2, 2));
+  nnc::igtl_detail::writeBeFloat(dest + 36, m(0, 3));
+  nnc::igtl_detail::writeBeFloat(dest + 40, m(1, 3));
+  nnc::igtl_detail::writeBeFloat(dest + 44, m(2, 3));
+}
+
+void writeHeader(std::uint8_t* out,
+                 const char* type,
+                 const char* deviceName,
+                 std::uint64_t timeStamp,
+                 std::uint64_t bodySize)
+{
+  nnc::igtl_detail::writeBe16(out + 0, 1);
+  nnc::igtl_detail::writePaddedField(out + 2, 12, type);
+  nnc::igtl_detail::writePaddedField(out + 14, 20, deviceName);
+  nnc::igtl_detail::writeBe64(out + 34, timeStamp);
+  nnc::igtl_detail::writeBe64(out + 42, bodySize);
+}
+
+bool finishMessageParse(const std::uint8_t* data,
+                        std::size_t size,
+                        const char* expectedType,
+                        std::uint64_t expectedBodySize,
+                        IgtlHeader& header,
+                        const std::uint8_t*& bodyOut,
+                        std::string* error,
+                        const char* typeMismatchMsg,
+                        const char* sizeMismatchMsg,
+                        const char* crcMismatchMsg)
+{
+  if (!nnc::IgtlParser::parseHeader(data, size, header, error)) {
+    return false;
+  }
+  if (!nnc::igtl_detail::typeEquals(data + 2, expectedType)) {
+    nnc::igtl_detail::setError(error, typeMismatchMsg);
+    return false;
+  }
+  if (header.bodySize != expectedBodySize) {
+    nnc::igtl_detail::setError(error, sizeMismatchMsg);
+    return false;
+  }
+  if (size < nnc::kIgtlHeaderSize + header.bodySize) {
+    nnc::igtl_detail::setError(error, "message shorter than header + body");
+    return false;
+  }
+  bodyOut = data + nnc::kIgtlHeaderSize;
+  if (!nnc::IgtlParser::verifyBodyCrc(bodyOut, static_cast<std::size_t>(header.bodySize),
+                                 header.crc)) {
+    nnc::igtl_detail::setError(error, crcMismatchMsg);
+    return false;
+  }
+  return true;
+}
+
 }  // namespace igtl_detail
 
 bool IgtlParser::parseHeader(const std::uint8_t* data,
@@ -284,26 +358,11 @@ bool IgtlParser::parseTransformMessage(const std::uint8_t* data,
                                       std::string* error)
 {
   nnc::IgtlHeader header;
-  if (!nnc::IgtlParser::parseHeader(data, size, header, error)) {
-    return false;
-  }
-  if (!nnc::igtl_detail::typeEquals(data + 2, "TRANSFORM")) {
-    nnc::igtl_detail::setError(error, "message type is not TRANSFORM");
-    return false;
-  }
-  if (header.bodySize != nnc::kIgtlTransformBodySize) {
-    nnc::igtl_detail::setError(error, "unexpected TRANSFORM body size");
-    return false;
-  }
-  if (size < nnc::kIgtlHeaderSize + header.bodySize) {
-    nnc::igtl_detail::setError(error, "message shorter than header + body");
-    return false;
-  }
-
-  const std::uint8_t* body = data + nnc::kIgtlHeaderSize;
-  if (!nnc::IgtlParser::verifyBodyCrc(body, static_cast<std::size_t>(header.bodySize),
-                                      header.crc)) {
-    nnc::igtl_detail::setError(error, "TRANSFORM body CRC mismatch");
+  const std::uint8_t* body = nullptr;
+  if (!nnc::igtl_detail::finishMessageParse(
+          data, size, "TRANSFORM", nnc::kIgtlTransformBodySize, header, body, error,
+          "message type is not TRANSFORM", "unexpected TRANSFORM body size",
+          "TRANSFORM body CRC mismatch")) {
     return false;
   }
   if (!nnc::IgtlParser::parseTransformBody(body, static_cast<std::size_t>(header.bodySize),
@@ -328,34 +387,194 @@ bool IgtlParser::packTransformMessage(const Mat4& toolToTracker,
   }
 
   out.assign(nnc::kIgtlHeaderSize + nnc::kIgtlTransformBodySize, 0);
+  nnc::igtl_detail::writeHeader(out.data(), "TRANSFORM", deviceName, timeStamp,
+                                nnc::kIgtlTransformBodySize);
 
-  // Header
-  nnc::igtl_detail::writeBe16(out.data() + 0, 1);
-  std::memset(out.data() + 2, 0, 12);
-  std::memcpy(out.data() + 2, "TRANSFORM", 9);
-  std::memset(out.data() + 14, 0, 20);
-  const std::size_t nameLen = std::min(std::strlen(deviceName), static_cast<std::size_t>(20));
-  std::memcpy(out.data() + 14, deviceName, nameLen);
-  nnc::igtl_detail::writeBe64(out.data() + 34, timeStamp);
-  nnc::igtl_detail::writeBe64(out.data() + 42, nnc::kIgtlTransformBodySize);
-
-  // Body: column-major upper 3x4 in OpenIGTLink order
   std::uint8_t* body = out.data() + nnc::kIgtlHeaderSize;
-  nnc::igtl_detail::writeBeFloat(body + 0, toolToTracker(0, 0));
-  nnc::igtl_detail::writeBeFloat(body + 4, toolToTracker(1, 0));
-  nnc::igtl_detail::writeBeFloat(body + 8, toolToTracker(2, 0));
-  nnc::igtl_detail::writeBeFloat(body + 12, toolToTracker(0, 1));
-  nnc::igtl_detail::writeBeFloat(body + 16, toolToTracker(1, 1));
-  nnc::igtl_detail::writeBeFloat(body + 20, toolToTracker(2, 1));
-  nnc::igtl_detail::writeBeFloat(body + 24, toolToTracker(0, 2));
-  nnc::igtl_detail::writeBeFloat(body + 28, toolToTracker(1, 2));
-  nnc::igtl_detail::writeBeFloat(body + 32, toolToTracker(2, 2));
-  nnc::igtl_detail::writeBeFloat(body + 36, toolToTracker(0, 3));
-  nnc::igtl_detail::writeBeFloat(body + 40, toolToTracker(1, 3));
-  nnc::igtl_detail::writeBeFloat(body + 44, toolToTracker(2, 3));
+  nnc::igtl_detail::writeTransform12(body, toolToTracker);
 
   const std::uint64_t crc =
       nnc::igtl_detail::crc64(body, nnc::kIgtlTransformBodySize, 0ULL);
+  nnc::igtl_detail::writeBe64(out.data() + 50, crc);
+  return true;
+}
+
+bool IgtlParser::parseTdataBodyOneTool(const std::uint8_t* body,
+                                       std::size_t size,
+                                       Mat4& out,
+                                       char* toolNameOut,
+                                       std::size_t toolNameCap,
+                                       std::string* error)
+{
+  if (body == nullptr || size < nnc::kIgtlTdataElementSize) {
+    nnc::igtl_detail::setError(error, "TDATA body shorter than one 70-byte element");
+    return false;
+  }
+  if (size != nnc::kIgtlTdataElementSize) {
+    nnc::igtl_detail::setError(error, "TDATA body must contain exactly one tool element");
+    return false;
+  }
+
+  if (toolNameOut != nullptr && toolNameCap > 0) {
+    nnc::igtl_detail::copyPaddedField(toolNameOut, toolNameCap, body, 20);
+  }
+
+  // Matrix starts at offset 22 (name[20] + type + reserved).
+  return nnc::IgtlParser::parseTransformBody(body + 22, size - 22, out, error);
+}
+
+bool IgtlParser::parseTdataMessage(const std::uint8_t* data,
+                                   std::size_t size,
+                                   Mat4& out,
+                                   IgtlHeader* headerOut,
+                                   char* toolNameOut,
+                                   std::size_t toolNameCap,
+                                   std::string* error)
+{
+  nnc::IgtlHeader header;
+  const std::uint8_t* body = nullptr;
+  if (!nnc::igtl_detail::finishMessageParse(
+          data, size, "TDATA", nnc::kIgtlTdataElementSize, header, body, error,
+          "message type is not TDATA", "unexpected TDATA body size (one tool required)",
+          "TDATA body CRC mismatch")) {
+    return false;
+  }
+  if (!nnc::IgtlParser::parseTdataBodyOneTool(body, static_cast<std::size_t>(header.bodySize),
+                                             out, toolNameOut, toolNameCap, error)) {
+    return false;
+  }
+  if (headerOut) {
+    *headerOut = header;
+  }
+  return true;
+}
+
+bool IgtlParser::packTdataMessage(const Mat4& toolToTracker,
+                                  const char* toolName,
+                                  const char* deviceName,
+                                  std::uint64_t timeStamp,
+                                  std::vector<std::uint8_t>& out,
+                                  std::string* error)
+{
+  if (toolName == nullptr) {
+    nnc::igtl_detail::setError(error, "toolName is null");
+    return false;
+  }
+  if (deviceName == nullptr) {
+    nnc::igtl_detail::setError(error, "deviceName is null");
+    return false;
+  }
+
+  out.assign(nnc::kIgtlHeaderSize + nnc::kIgtlTdataElementSize, 0);
+  nnc::igtl_detail::writeHeader(out.data(), "TDATA", deviceName, timeStamp,
+                                nnc::kIgtlTdataElementSize);
+
+  std::uint8_t* body = out.data() + nnc::kIgtlHeaderSize;
+  nnc::igtl_detail::writePaddedField(body, 20, toolName);
+  body[20] = nnc::kIgtlTdataType6D;
+  body[21] = 0;
+  nnc::igtl_detail::writeTransform12(body + 22, toolToTracker);
+
+  const std::uint64_t crc =
+      nnc::igtl_detail::crc64(body, nnc::kIgtlTdataElementSize, 0ULL);
+  nnc::igtl_detail::writeBe64(out.data() + 50, crc);
+  return true;
+}
+
+bool IgtlParser::parseTrajectoryBody(const std::uint8_t* body,
+                                     std::size_t size,
+                                     Vec3& entryOut,
+                                     Vec3& targetOut,
+                                     std::string* error)
+{
+  if (body == nullptr || size < nnc::kIgtlTrajectoryElementSize) {
+    nnc::igtl_detail::setError(error, "TRAJ body shorter than one 150-byte element");
+    return false;
+  }
+  if (size != nnc::kIgtlTrajectoryElementSize) {
+    nnc::igtl_detail::setError(error, "TRAJ body must contain exactly one element");
+    return false;
+  }
+
+  // Layout: name[64], group[32], type, reserved, rgba[4], entry[3], target[3], ...
+  const std::uint8_t trajType = body[96];
+  if (trajType != nnc::kIgtlTrajectoryTypeEntryTarget) {
+    nnc::igtl_detail::setError(error, "TRAJ type is not entry+target");
+    return false;
+  }
+
+  const std::size_t entryOff = 102;  // 64 + 32 + 1 + 1 + 4
+  entryOut.x = nnc::igtl_detail::readBeFloat(body + entryOff + 0);
+  entryOut.y = nnc::igtl_detail::readBeFloat(body + entryOff + 4);
+  entryOut.z = nnc::igtl_detail::readBeFloat(body + entryOff + 8);
+  targetOut.x = nnc::igtl_detail::readBeFloat(body + entryOff + 12);
+  targetOut.y = nnc::igtl_detail::readBeFloat(body + entryOff + 16);
+  targetOut.z = nnc::igtl_detail::readBeFloat(body + entryOff + 20);
+  return true;
+}
+
+bool IgtlParser::parseTrajectoryMessage(const std::uint8_t* data,
+                                        std::size_t size,
+                                        Vec3& entryOut,
+                                        Vec3& targetOut,
+                                        IgtlHeader* headerOut,
+                                        std::string* error)
+{
+  nnc::IgtlHeader header;
+  const std::uint8_t* body = nullptr;
+  if (!nnc::igtl_detail::finishMessageParse(
+          data, size, "TRAJ", nnc::kIgtlTrajectoryElementSize, header, body, error,
+          "message type is not TRAJ",
+          "unexpected TRAJ body size (one element required)",
+          "TRAJ body CRC mismatch")) {
+    return false;
+  }
+  if (!nnc::IgtlParser::parseTrajectoryBody(body, static_cast<std::size_t>(header.bodySize),
+                                            entryOut, targetOut, error)) {
+    return false;
+  }
+  if (headerOut) {
+    *headerOut = header;
+  }
+  return true;
+}
+
+bool IgtlParser::packTrajectoryMessage(const Vec3& entry,
+                                       const Vec3& target,
+                                       const char* deviceName,
+                                       std::uint64_t timeStamp,
+                                       std::vector<std::uint8_t>& out,
+                                       std::string* error)
+{
+  if (deviceName == nullptr) {
+    nnc::igtl_detail::setError(error, "deviceName is null");
+    return false;
+  }
+
+  out.assign(nnc::kIgtlHeaderSize + nnc::kIgtlTrajectoryElementSize, 0);
+  nnc::igtl_detail::writeHeader(out.data(), "TRAJ", deviceName, timeStamp,
+                                nnc::kIgtlTrajectoryElementSize);
+
+  std::uint8_t* body = out.data() + nnc::kIgtlHeaderSize;
+  nnc::igtl_detail::writePaddedField(body + 0, 64, "Plan");
+  nnc::igtl_detail::writePaddedField(body + 64, 32, "Trajectory");
+  body[96] = nnc::kIgtlTrajectoryTypeEntryTarget;
+  body[97] = 0;
+  body[98] = 255;  // R
+  body[99] = 0;    // G
+  body[100] = 0;   // B
+  body[101] = 255; // A
+  nnc::igtl_detail::writeBeFloat(body + 102, entry.x);
+  nnc::igtl_detail::writeBeFloat(body + 106, entry.y);
+  nnc::igtl_detail::writeBeFloat(body + 110, entry.z);
+  nnc::igtl_detail::writeBeFloat(body + 114, target.x);
+  nnc::igtl_detail::writeBeFloat(body + 118, target.y);
+  nnc::igtl_detail::writeBeFloat(body + 122, target.z);
+  nnc::igtl_detail::writeBeFloat(body + 126, 0.f);  // diameter / radius
+  // owner_name[20] at 130 already zeroed
+
+  const std::uint64_t crc =
+      nnc::igtl_detail::crc64(body, nnc::kIgtlTrajectoryElementSize, 0ULL);
   nnc::igtl_detail::writeBe64(out.data() + 50, crc);
   return true;
 }

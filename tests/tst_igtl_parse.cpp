@@ -17,6 +17,29 @@ bool nearlyEqual(float a, float b, float eps = 1e-5f)
   return std::fabs(a - b) <= eps;
 }
 
+nnc::Mat4 samplePose()
+{
+  nnc::Mat4 sent = nnc::Mat4::identity();
+  sent(0, 3) = 10.f;
+  sent(1, 3) = 20.f;
+  sent(2, 3) = 30.f;
+  sent(0, 0) = 0.f;
+  sent(0, 1) = -1.f;
+  sent(1, 0) = 1.f;
+  sent(1, 1) = 0.f;
+  return sent;
+}
+
+void expectMatEqual(const nnc::Mat4& got, const nnc::Mat4& sent)
+{
+  for (int r = 0; r < 4; ++r) {
+    for (int c = 0; c < 4; ++c) {
+      QVERIFY2(nearlyEqual(got(r, c), sent(r, c)),
+               qPrintable(QStringLiteral("mismatch at (%1,%2)").arg(r).arg(c)));
+    }
+  }
+}
+
 }  // namespace test_detail
 }  // namespace nnc
 
@@ -26,20 +49,14 @@ private slots:
   void packThenParseRoundTrip();
   void rejectsBadCrc();
   void rejectsShortBuffer();
+  void tdataPackThenParseRoundTrip();
+  void trajectoryPackThenParseRoundTrip();
+  void trajectoryRejectsWrongType();
 };
 
 void TstREQ_IGTL_TransformParse::packThenParseRoundTrip()
 {
-  nnc::Mat4 sent = nnc::Mat4::identity();
-  // Tip-at-origin, shaft +Z: identity already; add a translation.
-  sent(0, 3) = 10.f;
-  sent(1, 3) = 20.f;
-  sent(2, 3) = 30.f;
-  // Mild rotation about Z (approx cos/sin 90°).
-  sent(0, 0) = 0.f;
-  sent(0, 1) = -1.f;
-  sent(1, 0) = 1.f;
-  sent(1, 1) = 0.f;
+  const nnc::Mat4 sent = nnc::test_detail::samplePose();
 
   std::vector<std::uint8_t> bytes;
   std::string err;
@@ -55,13 +72,7 @@ void TstREQ_IGTL_TransformParse::packThenParseRoundTrip()
   QCOMPARE(std::string(header.type), std::string("TRANSFORM"));
   QCOMPARE(std::string(header.deviceName), std::string("Tool"));
   QCOMPARE(header.bodySize, static_cast<std::uint64_t>(nnc::kIgtlTransformBodySize));
-
-  for (int r = 0; r < 4; ++r) {
-    for (int c = 0; c < 4; ++c) {
-      QVERIFY2(nnc::test_detail::nearlyEqual(got(r, c), sent(r, c)),
-               qPrintable(QStringLiteral("mismatch at (%1,%2)").arg(r).arg(c)));
-    }
-  }
+  nnc::test_detail::expectMatEqual(got, sent);
 }
 
 void TstREQ_IGTL_TransformParse::rejectsBadCrc()
@@ -87,6 +98,71 @@ void TstREQ_IGTL_TransformParse::rejectsShortBuffer()
   nnc::Mat4 got;
   std::string err;
   QVERIFY(!nnc::IgtlParser::parseTransformMessage(tiny, sizeof(tiny), got, nullptr, &err));
+}
+
+void TstREQ_IGTL_TransformParse::tdataPackThenParseRoundTrip()
+{
+  const nnc::Mat4 sent = nnc::test_detail::samplePose();
+
+  std::vector<std::uint8_t> bytes;
+  std::string err;
+  QVERIFY2(nnc::IgtlParser::packTdataMessage(sent, "Probe", "Tracker", 0, bytes, &err),
+           err.c_str());
+  QCOMPARE(static_cast<int>(bytes.size()),
+           static_cast<int>(nnc::kIgtlHeaderSize + nnc::kIgtlTdataElementSize));
+
+  nnc::IgtlHeader header;
+  nnc::Mat4 got = nnc::Mat4::identity();
+  char toolName[21] = {};
+  QVERIFY2(nnc::IgtlParser::parseTdataMessage(bytes.data(), bytes.size(), got, &header, toolName,
+                                              sizeof(toolName), &err),
+           err.c_str());
+
+  QCOMPARE(std::string(header.type), std::string("TDATA"));
+  QCOMPARE(std::string(header.deviceName), std::string("Tracker"));
+  QCOMPARE(std::string(toolName), std::string("Probe"));
+  QCOMPARE(header.bodySize, static_cast<std::uint64_t>(nnc::kIgtlTdataElementSize));
+  nnc::test_detail::expectMatEqual(got, sent);
+}
+
+void TstREQ_IGTL_TransformParse::trajectoryPackThenParseRoundTrip()
+{
+  const nnc::Vec3 entry{1.f, 2.f, 3.f};
+  const nnc::Vec3 target{10.f, 20.f, 30.f};
+
+  std::vector<std::uint8_t> bytes;
+  std::string err;
+  QVERIFY2(nnc::IgtlParser::packTrajectoryMessage(entry, target, "Plan", 0, bytes, &err),
+           err.c_str());
+  QCOMPARE(static_cast<int>(bytes.size()),
+           static_cast<int>(nnc::kIgtlHeaderSize + nnc::kIgtlTrajectoryElementSize));
+
+  nnc::IgtlHeader header;
+  nnc::Vec3 gotEntry{};
+  nnc::Vec3 gotTarget{};
+  QVERIFY2(nnc::IgtlParser::parseTrajectoryMessage(bytes.data(), bytes.size(), gotEntry, gotTarget,
+                                                   &header, &err),
+           err.c_str());
+
+  QCOMPARE(std::string(header.type), std::string("TRAJ"));
+  QCOMPARE(header.bodySize, static_cast<std::uint64_t>(nnc::kIgtlTrajectoryElementSize));
+  QVERIFY(nnc::test_detail::nearlyEqual(gotEntry.x, entry.x));
+  QVERIFY(nnc::test_detail::nearlyEqual(gotEntry.y, entry.y));
+  QVERIFY(nnc::test_detail::nearlyEqual(gotEntry.z, entry.z));
+  QVERIFY(nnc::test_detail::nearlyEqual(gotTarget.x, target.x));
+  QVERIFY(nnc::test_detail::nearlyEqual(gotTarget.y, target.y));
+  QVERIFY(nnc::test_detail::nearlyEqual(gotTarget.z, target.z));
+}
+
+void TstREQ_IGTL_TransformParse::trajectoryRejectsWrongType()
+{
+  std::uint8_t body[nnc::kIgtlTrajectoryElementSize] = {};
+  body[96] = 1;  // entry-only, not entry+target
+  nnc::Vec3 entry{};
+  nnc::Vec3 target{};
+  std::string err;
+  QVERIFY(!nnc::IgtlParser::parseTrajectoryBody(body, sizeof(body), entry, target, &err));
+  QVERIFY(err.find("entry+target") != std::string::npos);
 }
 
 QTEST_APPLESS_MAIN(TstREQ_IGTL_TransformParse)
