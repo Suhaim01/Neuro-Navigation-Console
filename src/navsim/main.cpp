@@ -1,7 +1,10 @@
+#include <arpa/inet.h>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 
 namespace nnc
 {
@@ -17,13 +20,11 @@ struct Options
 
 void printUsage(const char *argv0)
 {
-  std::cerr
-    << "Usage: " << argv0
-    << " [--port N] [--rate Hz] [--help]\n"
-    << "\n"
-    << "  --port N   TCP listen port (default 18944)\n"
-    << "  --rate Hz  Nominal pose stream rate (default 60; demo range ~30-60)\n"
-    << "  --help     Show this help\n";
+  std::cerr << "Usage: " << argv0 << " [--port N] [--rate Hz] [--help]\n"
+            << "\n"
+            << "  --port N   TCP listen port (default 18944)\n"
+            << "  --rate Hz  Nominal pose stream rate (default 60; demo range ~30-60)\n"
+            << "  --help     Show this help\n";
 }
 
 bool parseArgs(int argc, char **argv, Options &out, std::string *error)
@@ -89,6 +90,123 @@ bool parseArgs(int argc, char **argv, Options &out, std::string *error)
   return true;
 }
 
+void closeFd(int *fd)
+{
+  if (fd == nullptr || *fd < 0)
+  {
+    return;
+  }
+  ::close(*fd);
+  *fd = -1;
+}
+
+// Returns listening socket fd, or -1 on failure (error set).
+int createListeningSocket(int port, std::string *error)
+{
+  const int listenFd = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (listenFd < 0)
+  {
+    if (error)
+    {
+      *error = std::string("socket() failed: ") + std::strerror(errno);
+    }
+    return -1;
+  }
+
+  const int yes = 1;
+  if (::setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0)
+  {
+    if (error)
+    {
+      *error = std::string("setsockopt(SO_REUSEADDR) failed: ") + std::strerror(errno);
+    }
+    ::close(listenFd);
+    return -1;
+  }
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  addr.sin_port = htons(static_cast<std::uint16_t>(port));
+
+  if (::bind(listenFd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0)
+  {
+    if (error)
+    {
+      *error = std::string("bind() failed: ") + std::strerror(errno);
+    }
+    ::close(listenFd);
+    return -1;
+  }
+
+  if (::listen(listenFd, 1) < 0)
+  {
+    if (error)
+    {
+      *error = std::string("listen() failed: ") + std::strerror(errno);
+    }
+    ::close(listenFd);
+    return -1;
+  }
+
+  return listenFd;
+}
+
+// Block until peer closes or an error; then close clientFd.
+void waitUntilClientDisconnects(int clientFd)
+{
+  char discard[256];
+  while (true)
+  {
+    const ssize_t n = ::recv(clientFd, discard, sizeof(discard), 0);
+    if (n == 0)
+    {
+      break; // peer closed
+    }
+    if (n < 0)
+    {
+      if (errno == EINTR)
+      {
+        continue;
+      }
+      break;
+    }
+    // Ignore inbound bytes for now (OpenIGTLink queries come later if ever).
+  }
+  ::close(clientFd);
+}
+
+// Accept one client, hold until disconnect. Returns false on accept failure.
+bool acceptOneClientSession(int listenFd, std::string *error)
+{
+  sockaddr_in peer{};
+  socklen_t peerLen = sizeof(peer);
+  const int clientFd =
+    ::accept(listenFd, reinterpret_cast<sockaddr *>(&peer), &peerLen);
+  if (clientFd < 0)
+  {
+    if (errno == EINTR)
+    {
+      return true; // interrupted; caller may retry
+    }
+    if (error)
+    {
+      *error = std::string("accept() failed: ") + std::strerror(errno);
+    }
+    return false;
+  }
+
+  char peerText[INET_ADDRSTRLEN] = {};
+  ::inet_ntop(AF_INET, &peer.sin_addr, peerText, sizeof(peerText));
+  std::cout << "navsim: client connected from " << peerText << ':'
+            << ntohs(peer.sin_port) << std::endl;
+
+  // 2b: no TRAJ/pose yet — hold the socket until the client disconnects.
+  nnc::navsim_detail::waitUntilClientDisconnects(clientFd);
+  std::cout << "navsim: client disconnected" << std::endl;
+  return true;
+}
+
 } // namespace navsim_detail
 } // namespace nnc
 
@@ -108,7 +226,23 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  std::cout << "navsim: port=" << opts.port << " rate=" << opts.rateHz
-            << " Hz (CLI skeleton; TCP listen lands in Task 2b)\n";
-  return 0;
+  int listenFd = nnc::navsim_detail::createListeningSocket(opts.port, &err);
+  if (listenFd < 0)
+  {
+    std::cerr << "navsim: " << err << '\n';
+    return 1;
+  }
+
+  std::cout << "navsim: listening on port " << opts.port << " (rate=" << opts.rateHz
+            << " Hz reserved for pose stream in 2d)" << std::endl;
+
+  while (true)
+  {
+    if (!nnc::navsim_detail::acceptOneClientSession(listenFd, &err))
+    {
+      std::cerr << "navsim: " << err << std::endl;
+      nnc::navsim_detail::closeFd(&listenFd);
+      return 1;
+    }
+  }
 }
