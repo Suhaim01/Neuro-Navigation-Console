@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
+#include <poll.h>
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -162,30 +163,6 @@ int createListeningSocket(int port, std::string *error)
   return listenFd;
 }
 
-// Block until peer closes or an error; then close clientFd.
-void waitUntilClientDisconnects(int clientFd)
-{
-  char discard[256];
-  while (true)
-  {
-    const ssize_t n = ::recv(clientFd, discard, sizeof(discard), 0);
-    if (n == 0)
-    {
-      break; // peer closed
-    }
-    if (n < 0)
-    {
-      if (errno == EINTR)
-      {
-        continue;
-      }
-      break;
-    }
-    // Ignore inbound bytes for now (OpenIGTLink queries come later if ever).
-  }
-  ::close(clientFd);
-}
-
 bool sendAll(int fd, const std::uint8_t *data, std::size_t size, std::string *error)
 {
   std::size_t sent = 0;
@@ -217,6 +194,105 @@ bool sendAll(int fd, const std::uint8_t *data, std::size_t size, std::string *er
   return true;
 }
 
+nnc::Mat4 poseAlongPlan(float phase01)
+{
+  // Tip-at-origin, shaft +Z: identity rotation. Slide tip along entry→target.
+  nnc::Mat4 pose = nnc::Mat4::identity();
+  const float t = phase01 - static_cast<float>(static_cast<int>(phase01)); // wrap [0,1)
+  pose(0, 3) = nnc::navsim_detail::kPlanEntry.x +
+               t * (nnc::navsim_detail::kPlanTarget.x - nnc::navsim_detail::kPlanEntry.x);
+  pose(1, 3) = nnc::navsim_detail::kPlanEntry.y +
+               t * (nnc::navsim_detail::kPlanTarget.y - nnc::navsim_detail::kPlanEntry.y);
+  pose(2, 3) = nnc::navsim_detail::kPlanEntry.z +
+               t * (nnc::navsim_detail::kPlanTarget.z - nnc::navsim_detail::kPlanEntry.z);
+  return pose;
+}
+
+// Stream TRANSFORM poses at rateHz until the peer disconnects; then close clientFd.
+bool streamPosesUntilDisconnect(int clientFd, int rateHz, std::string *error)
+{
+  if (rateHz <= 0)
+  {
+    if (error)
+    {
+      *error = "rateHz must be positive";
+    }
+    ::close(clientFd);
+    return false;
+  }
+
+  const int periodMs = 1000 / rateHz;
+  std::uint64_t frame = 0;
+  std::cout << "navsim: streaming TRANSFORM at " << rateHz << " Hz" << std::endl;
+
+  while (true)
+  {
+    pollfd pfd{};
+    pfd.fd = clientFd;
+    pfd.events = POLLIN;
+    const int pr = ::poll(&pfd, 1, periodMs);
+    if (pr < 0)
+    {
+      if (errno == EINTR)
+      {
+        continue;
+      }
+      if (error)
+      {
+        *error = std::string("poll() failed: ") + std::strerror(errno);
+      }
+      ::close(clientFd);
+      return false;
+    }
+
+    if (pr > 0 && (pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0)
+    {
+      char discard[256];
+      const ssize_t n = ::recv(clientFd, discard, sizeof(discard), 0);
+      if (n == 0)
+      {
+        break; // peer closed
+      }
+      if (n < 0)
+      {
+        if (errno == EINTR)
+        {
+          continue;
+        }
+        break;
+      }
+      // Ignore inbound bytes for now.
+      continue;
+    }
+
+    // Timeout: send next pose. One full entry→target cycle about every 2 seconds.
+    const float phase01 = static_cast<float>(frame % static_cast<std::uint64_t>(rateHz * 2)) /
+                          static_cast<float>(rateHz * 2);
+    const nnc::Mat4 toolToTracker = nnc::navsim_detail::poseAlongPlan(phase01);
+
+    std::vector<std::uint8_t> bytes;
+    if (!nnc::IgtlParser::packTransformMessage(toolToTracker, "Tool", frame, bytes, error))
+    {
+      ::close(clientFd);
+      return false;
+    }
+    if (!nnc::navsim_detail::sendAll(clientFd, bytes.data(), bytes.size(), error))
+    {
+      // Peer gone mid-stream — end session without killing the server.
+      if (error)
+      {
+        error->clear();
+      }
+      ::close(clientFd);
+      return true;
+    }
+    ++frame;
+  }
+
+  ::close(clientFd);
+  return true;
+}
+
 bool sendTrajectoryOnConnect(int clientFd, std::string *error)
 {
   std::vector<std::uint8_t> bytes;
@@ -241,8 +317,8 @@ bool sendTrajectoryOnConnect(int clientFd, std::string *error)
   return true;
 }
 
-// Accept one client, send TRAJ, hold until disconnect. Returns false on hard failure.
-bool acceptOneClientSession(int listenFd, std::string *error)
+// Accept one client, send TRAJ, then stream TRANSFORM until disconnect.
+bool acceptOneClientSession(int listenFd, int rateHz, std::string *error)
 {
   sockaddr_in peer{};
   socklen_t peerLen = sizeof(peer);
@@ -271,7 +347,10 @@ bool acceptOneClientSession(int listenFd, std::string *error)
     return false;
   }
 
-  nnc::navsim_detail::waitUntilClientDisconnects(clientFd);
+  if (!nnc::navsim_detail::streamPosesUntilDisconnect(clientFd, rateHz, error))
+  {
+    return false;
+  }
   std::cout << "navsim: client disconnected" << std::endl;
   return true;
 }
@@ -302,12 +381,12 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  std::cout << "navsim: listening on port " << opts.port << " (rate=" << opts.rateHz
-            << " Hz reserved for pose stream in 2d)" << std::endl;
+  std::cout << "navsim: listening on port " << opts.port << " (pose rate=" << opts.rateHz
+            << " Hz)" << std::endl;
 
   while (true)
   {
-    if (!nnc::navsim_detail::acceptOneClientSession(listenFd, &err))
+    if (!nnc::navsim_detail::acceptOneClientSession(listenFd, opts.rateHz, &err))
     {
       std::cerr << "navsim: " << err << std::endl;
       nnc::navsim_detail::closeFd(&listenFd);
