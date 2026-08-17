@@ -1,15 +1,25 @@
+#include "io/IgtlParser.h"
+
 #include <arpa/inet.h>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <netinet/in.h>
 #include <string>
+#include <sys/socket.h>
 #include <unistd.h>
+#include <vector>
 
 namespace nnc
 {
 namespace navsim_detail
 {
+
+// Fixed plan in image-ish millimetres for Task 5 fiducial alignment later.
+constexpr nnc::Vec3 kPlanEntry{0.f, 0.f, 0.f};
+constexpr nnc::Vec3 kPlanTarget{0.f, 0.f, 80.f};
 
 struct Options
 {
@@ -176,13 +186,67 @@ void waitUntilClientDisconnects(int clientFd)
   ::close(clientFd);
 }
 
-// Accept one client, hold until disconnect. Returns false on accept failure.
+bool sendAll(int fd, const std::uint8_t *data, std::size_t size, std::string *error)
+{
+  std::size_t sent = 0;
+  while (sent < size)
+  {
+    const ssize_t n = ::send(fd, data + sent, size - sent, MSG_NOSIGNAL);
+    if (n < 0)
+    {
+      if (errno == EINTR)
+      {
+        continue;
+      }
+      if (error)
+      {
+        *error = std::string("send() failed: ") + std::strerror(errno);
+      }
+      return false;
+    }
+    if (n == 0)
+    {
+      if (error)
+      {
+        *error = "send() returned 0";
+      }
+      return false;
+    }
+    sent += static_cast<std::size_t>(n);
+  }
+  return true;
+}
+
+bool sendTrajectoryOnConnect(int clientFd, std::string *error)
+{
+  std::vector<std::uint8_t> bytes;
+  if (!nnc::IgtlParser::packTrajectoryMessage(nnc::navsim_detail::kPlanEntry,
+                                              nnc::navsim_detail::kPlanTarget,
+                                              "Plan",
+                                              0,
+                                              bytes,
+                                              error))
+  {
+    return false;
+  }
+  if (!nnc::navsim_detail::sendAll(clientFd, bytes.data(), bytes.size(), error))
+  {
+    return false;
+  }
+  std::cout << "navsim: sent TRAJ (" << bytes.size() << " bytes) entry=("
+            << nnc::navsim_detail::kPlanEntry.x << ',' << nnc::navsim_detail::kPlanEntry.y << ','
+            << nnc::navsim_detail::kPlanEntry.z << ") target=(" << nnc::navsim_detail::kPlanTarget.x
+            << ',' << nnc::navsim_detail::kPlanTarget.y << ',' << nnc::navsim_detail::kPlanTarget.z
+            << ')' << std::endl;
+  return true;
+}
+
+// Accept one client, send TRAJ, hold until disconnect. Returns false on hard failure.
 bool acceptOneClientSession(int listenFd, std::string *error)
 {
   sockaddr_in peer{};
   socklen_t peerLen = sizeof(peer);
-  const int clientFd =
-    ::accept(listenFd, reinterpret_cast<sockaddr *>(&peer), &peerLen);
+  const int clientFd = ::accept(listenFd, reinterpret_cast<sockaddr *>(&peer), &peerLen);
   if (clientFd < 0)
   {
     if (errno == EINTR)
@@ -198,10 +262,15 @@ bool acceptOneClientSession(int listenFd, std::string *error)
 
   char peerText[INET_ADDRSTRLEN] = {};
   ::inet_ntop(AF_INET, &peer.sin_addr, peerText, sizeof(peerText));
-  std::cout << "navsim: client connected from " << peerText << ':'
-            << ntohs(peer.sin_port) << std::endl;
+  std::cout << "navsim: client connected from " << peerText << ':' << ntohs(peer.sin_port)
+            << std::endl;
 
-  // 2b: no TRAJ/pose yet — hold the socket until the client disconnects.
+  if (!nnc::navsim_detail::sendTrajectoryOnConnect(clientFd, error))
+  {
+    ::close(clientFd);
+    return false;
+  }
+
   nnc::navsim_detail::waitUntilClientDisconnects(clientFd);
   std::cout << "navsim: client disconnected" << std::endl;
   return true;
