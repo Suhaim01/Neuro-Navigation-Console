@@ -8,6 +8,8 @@ cd "$ROOT"
 
 PORT="${NNC_NAVSIM_PORT:-18944}"
 RATE="${NNC_NAVSIM_RATE:-60}"
+export NNC_NAVSIM_PORT="${PORT}"
+export NNC_NAVSIM_HOST="${NNC_NAVSIM_HOST:-127.0.0.1}"
 
 if [[ ! -x build/navsim || ! -x build/nnc_console ]]; then
   echo "binaries missing — running ./build.sh"

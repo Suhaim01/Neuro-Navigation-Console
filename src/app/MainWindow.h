@@ -5,12 +5,16 @@
 
 #include <QMainWindow>
 
+#include <string>
+
 class MainWindow : public QMainWindow
 {
   Q_OBJECT
 
 public:
-  explicit MainWindow(QWidget *parent = nullptr);
+  explicit MainWindow(const std::string &igtlHost = {},
+                      int igtlPort = 0,
+                      QWidget *parent = nullptr);
   ~MainWindow() override;
 
   nnc::SceneModel &sceneModel();
