@@ -302,7 +302,7 @@ bool streamPosesUntilDisconnect(int clientFd, int rateHz, std::string *error)
     const float phase01 = static_cast<float>(frame % static_cast<std::uint64_t>(rateHz * 2)) /
                           static_cast<float>(rateHz * 2);
     const nnc::Mat4 toolToTracker =
-        nnc::navsim_detail::toolToTrackerAlongPlan(phase01, imageToTracker);
+      nnc::navsim_detail::toolToTrackerAlongPlan(phase01, imageToTracker);
 
     std::vector<std::uint8_t> bytes;
     if (!nnc::IgtlParser::packTransformMessage(toolToTracker, "Tool", frame, bytes, error))

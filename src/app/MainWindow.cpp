@@ -87,6 +87,13 @@ MainWindow::MainWindow(QWidget* parent)
   layout->addWidget(mprRow, 1);
 
   this->setCentralWidget(central);
+
+  this->igtlReceiver_.startReceiver();
+}
+
+MainWindow::~MainWindow()
+{
+  this->igtlReceiver_.stopReceiver();
 }
 
 nnc::SceneModel &MainWindow::sceneModel()
