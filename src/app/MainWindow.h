@@ -19,6 +19,8 @@ public:
 
   nnc::SceneModel &sceneModel();
   const nnc::SceneModel &sceneModel() const;
+  nnc::IgtlReceiver &igtlReceiver();
+  const nnc::IgtlReceiver &igtlReceiver() const;
 
 private:
   nnc::SceneModel sceneModel_;

@@ -2,7 +2,9 @@
 
 #include <QApplication>
 #include <QMessageBox>
+#include <QTimer>
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -18,16 +20,18 @@ struct IgtlCli
   std::string host;
   int port = 0;
   bool showHelp = false;
+  bool igtlSmoke = false;
   bool ok = true;
   std::string error;
 };
 
 void printUsage(const char *argv0)
 {
-  std::cerr << "Usage: " << argv0 << " [--igtl-host HOST] [--igtl-port N] [--help]\n"
+  std::cerr << "Usage: " << argv0 << " [--igtl-host HOST] [--igtl-port N] [--igtl-smoke] [--help]\n"
             << "\n"
             << "  --igtl-host HOST  OpenIGTLink server host (default 127.0.0.1 / env)\n"
             << "  --igtl-port N     OpenIGTLink server port (default 18944 / env)\n"
+            << "  --igtl-smoke      Headless check: connect, expect TRAJ + TRANSFORM, exit\n"
             << "  --help            Show this help\n";
 }
 
@@ -41,6 +45,11 @@ IgtlCli parseArgs(int argc, char **argv)
     {
       out.showHelp = true;
       return out;
+    }
+    if (std::strcmp(arg, "--igtl-smoke") == 0)
+    {
+      out.igtlSmoke = true;
+      continue;
     }
     if (std::strcmp(arg, "--igtl-host") == 0)
     {
@@ -79,6 +88,56 @@ IgtlCli parseArgs(int argc, char **argv)
   return out;
 }
 
+void runIgtlSmoke(QApplication &app, MainWindow &window)
+{
+  auto *pollTimer = new QTimer(&app);
+  pollTimer->setInterval(100);
+  QObject::connect(pollTimer, &QTimer::timeout, &app, [&app, &window]()
+  {
+    if (!window.sceneModel().hasPlan() || !window.igtlReceiver().hasToolPose())
+    {
+      return;
+    }
+
+    nnc::Mat4 toolToTracker = nnc::Mat4::identity();
+    if (!window.igtlReceiver().snapshotToolToTracker(&toolToTracker))
+    {
+      return;
+    }
+
+    const float tx = toolToTracker(0, 3);
+    const float ty = toolToTracker(1, 3);
+    const float tz = toolToTracker(2, 3);
+
+    const nnc::Vec3 entry = window.sceneModel().planEntry();
+    const nnc::Vec3 target = window.sceneModel().planTarget();
+    if (std::abs(entry.x) > 1e-3f || std::abs(entry.y) > 1e-3f || std::abs(entry.z) > 1e-3f ||
+        std::abs(target.x) > 1e-3f || std::abs(target.y) > 1e-3f ||
+        std::abs(target.z - 80.0f) > 1e-3f)
+    {
+      std::cerr << "nnc_console --igtl-smoke: unexpected plan entry=(" << entry.x << ','
+                << entry.y << ',' << entry.z << ") target=(" << target.x << ',' << target.y
+                << ',' << target.z << ")\n";
+      QApplication::exit(1);
+      return;
+    }
+
+    std::cout << "igtl smoke ok\n"
+              << "  plan entry=(" << entry.x << ',' << entry.y << ',' << entry.z << ")"
+              << " target=(" << target.x << ',' << target.y << ',' << target.z << ")\n"
+              << "  tool tip=(" << tx << ',' << ty << ',' << tz << ")\n";
+    QApplication::exit(0);
+  });
+
+  QTimer::singleShot(8000, &app, [&app]()
+  {
+    std::cerr << "nnc_console --igtl-smoke: timed out waiting for TRAJ + TRANSFORM\n";
+    QApplication::exit(1);
+  });
+
+  pollTimer->start();
+}
+
 } // namespace console_main_detail
 } // namespace nnc
 
@@ -106,6 +165,12 @@ int main(int argc, char *argv[])
   QApplication::setApplicationVersion(QStringLiteral(NNC_VERSION_FULL));
 
   MainWindow window(cli.host, cli.port);
+  if (cli.igtlSmoke)
+  {
+    nnc::console_main_detail::runIgtlSmoke(app, window);
+    return app.exec();
+  }
+
   window.show();
 
   QMessageBox::warning(

@@ -8,9 +8,8 @@
 namespace nnc
 {
 
-// Single source of truth for plan (+ optional pose mirror). Live toolToTracker
-// for the render path comes from IgtlReceiver's PoseTripleBuffer (3e); SceneModel
-// pose setters remain for 3f plan handoff / optional mirror.
+// Single source of truth for plan. Live toolToTracker for the render path comes
+// from IgtlReceiver's PoseTripleBuffer; not mirrored here (REQ-IGTL-004).
 class SceneModel
 {
 public:

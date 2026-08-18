@@ -1,5 +1,7 @@
 #include "io/IgtlReceiver.h"
 
+#include "app/SceneModel.h"
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFile>
@@ -112,6 +114,11 @@ int IgtlReceiver::port() const
 {
   std::lock_guard<std::mutex> lock(this->endpointMutex_);
   return this->port_;
+}
+
+void IgtlReceiver::setSceneModel(nnc::SceneModel *sceneModel)
+{
+  this->sceneModel_ = sceneModel;
 }
 
 void IgtlReceiver::startReceiver()
@@ -398,9 +405,13 @@ bool IgtlReceiver::readAndDispatch(int fd)
             << "IgtlReceiver: TRAJ parse failed:" << QString::fromStdString(parseError);
         continue;
       }
-      qInfo().nospace() << "IgtlReceiver: parsed TRAJ entry=(" << entry.x << ',' << entry.y
-                        << ',' << entry.z << ") target=(" << target.x << ',' << target.y << ','
-                        << target.z << ')';
+      if (this->sceneModel_ != nullptr)
+      {
+        this->sceneModel_->setPlan(entry, target);
+      }
+      qInfo().nospace() << "IgtlReceiver: stored TRAJ on SceneModel entry=(" << entry.x << ','
+                        << entry.y << ',' << entry.z << ") target=(" << target.x << ','
+                        << target.y << ',' << target.z << ')';
       continue;
     }
 
@@ -439,6 +450,10 @@ void IgtlReceiver::run()
   this->reassembler_.clear();
   this->poseBuffer_.clear();
   this->loggedTransform_ = false;
+  if (this->sceneModel_ != nullptr)
+  {
+    this->sceneModel_->clearPlan();
+  }
 
   qInfo().nospace() << "IgtlReceiver: connecting to " << host.c_str() << ":" << port;
 

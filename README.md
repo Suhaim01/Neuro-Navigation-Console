@@ -89,6 +89,14 @@ withheld.
 
 See [docs/BUILD.md](docs/BUILD.md).
 
+Smoke (after build):
+
+```bash
+./scripts/smoke_navsim.sh        # navsim wire: TRAJ + TRANSFORM
+./scripts/smoke_igtl_receiver.sh # console receiver: plan + live pose
+./scripts/run_demo.sh            # navsim + GUI console
+```
+
 ### Volume path (`NNC_VOLUME`)
 
 Path to the NIfTI `.nii` to load (relative to the working directory; run from the repo root).

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launch navsim (OpenIGTLink sim server) and nnc_console together.
-# Console will not consume the stream until Task 3 (IgtlReceiver) lands.
+# IgtlReceiver connects on startup (host/port from env, nnc.env, or CLI flags).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

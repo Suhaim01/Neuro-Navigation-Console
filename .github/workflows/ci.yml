@@ -36,4 +36,9 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
-        # No tests registered yet; stays green and ready for Day 2+.
+
+      - name: Smoke navsim
+        run: ./scripts/smoke_navsim.sh
+
+      - name: Smoke IgtlReceiver
+        run: ./scripts/smoke_igtl_receiver.sh

@@ -12,8 +12,10 @@
 namespace nnc
 {
 
+class SceneModel;
+
 // OpenIGTLink client worker. Owns its QThread (this object *is* the thread).
-// 3e: parsed TRANSFORM poses publish into a triple buffer for the render path.
+// 3f: TRAJ → SceneModel; TRANSFORM → triple buffer (render path).
 class IgtlReceiver : public QThread
 {
   Q_OBJECT
@@ -26,6 +28,9 @@ public:
   void setEndpoint(const std::string &host, int port);
   std::string host() const;
   int port() const;
+
+  // Plan handoff target (must outlive receiver; not owned). Call before startReceiver().
+  void setSceneModel(nnc::SceneModel *sceneModel);
 
   // Clear stop flag and start the worker thread (no-op if already running).
   void startReceiver();
@@ -61,6 +66,7 @@ private:
   std::string host_ = "127.0.0.1";
   int port_ = 18944;
   bool endpointExplicit_ = false;
+  nnc::SceneModel *sceneModel_ = nullptr;
 };
 
 } // namespace nnc

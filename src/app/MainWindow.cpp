@@ -95,6 +95,7 @@ MainWindow::MainWindow(const std::string &igtlHost, int igtlPort, QWidget *paren
   {
     this->igtlReceiver_.setEndpoint(igtlHost, igtlPort);
   }
+  this->igtlReceiver_.setSceneModel(&this->sceneModel_);
   this->igtlReceiver_.startReceiver();
 }
 
@@ -111,4 +112,14 @@ nnc::SceneModel &MainWindow::sceneModel()
 const nnc::SceneModel &MainWindow::sceneModel() const
 {
   return this->sceneModel_;
+}
+
+nnc::IgtlReceiver &MainWindow::igtlReceiver()
+{
+  return this->igtlReceiver_;
+}
+
+const nnc::IgtlReceiver &MainWindow::igtlReceiver() const
+{
+  return this->igtlReceiver_;
 }
