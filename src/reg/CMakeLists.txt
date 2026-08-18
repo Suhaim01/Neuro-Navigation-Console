@@ -1,4 +1,6 @@
 add_library(nnc_reg
+  FiducialLoader.cpp
+  FiducialLoader.h
   PairedPointRegistration.cpp
   PairedPointRegistration.h
 )

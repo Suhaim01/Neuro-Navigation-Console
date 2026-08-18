@@ -37,3 +37,19 @@ target_link_libraries(tst_paired_point_svd PRIVATE
 
 add_test(NAME tst_REQ_REG_001_PairedPointValidation
          COMMAND $<TARGET_FILE:tst_paired_point_svd>)
+
+add_executable(tst_fiducial_loader
+  tst_fiducial_loader.cpp
+)
+
+target_compile_definitions(tst_fiducial_loader PRIVATE
+  NNC_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+)
+
+target_link_libraries(tst_fiducial_loader PRIVATE
+  nnc_reg
+  Qt5::Test
+)
+
+add_test(NAME tst_REQ_REG_002_FiducialLoader
+         COMMAND $<TARGET_FILE:tst_fiducial_loader>)

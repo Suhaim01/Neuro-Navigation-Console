@@ -1,0 +1,8 @@
+# Canned fiducial pairs for navsim ground truth (imageToTracker inverse).
+# Columns: tracker_x tracker_y tracker_z  image_x image_y image_z  (mm)
+# Same tracker landmarks as tests/tst_paired_point_svd.cpp recoversNavsimInverseRotation.
+
+0 0 0       -27.141016 25.000000 -32.990381
+20 -5 10     -14.820508 20.000000 -14.330127
+-8 12 30     -49.069219 37.000000 -11.009619
+5 5 -15      -15.310889 30.000000 -43.480762
