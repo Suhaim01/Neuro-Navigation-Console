@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -18,9 +19,32 @@ namespace nnc
 namespace navsim_detail
 {
 
-// Fixed plan in image-ish millimetres for Task 5 fiducial alignment later.
+// Fixed plan in image millimetres (TRAJ on the wire). Task 5 fiducials align to this.
 constexpr nnc::Vec3 kPlanEntry{0.f, 0.f, 0.f};
 constexpr nnc::Vec3 kPlanTarget{0.f, 0.f, 80.f};
+
+// Ground-truth image→tracker so registration is load-bearing (REQ-FRAME-003).
+// toolToTracker = imageToTracker × toolInImage. Task 5 pairs must match the inverse.
+constexpr float kImageToTrackerPitchRad = 30.f * 0.017453292519943295f; // 30 deg about +Y
+constexpr float kImageToTrackerTx = 40.f;
+constexpr float kImageToTrackerTy = -25.f;
+constexpr float kImageToTrackerTz = 15.f;
+
+nnc::Mat4 makeImageToTracker()
+{
+  const float c = std::cos(nnc::navsim_detail::kImageToTrackerPitchRad);
+  const float s = std::sin(nnc::navsim_detail::kImageToTrackerPitchRad);
+  nnc::Mat4 M = nnc::Mat4::identity();
+  // Rotation about +Y, then translation (mm).
+  M(0, 0) = c;
+  M(0, 2) = s;
+  M(2, 0) = -s;
+  M(2, 2) = c;
+  M(0, 3) = nnc::navsim_detail::kImageToTrackerTx;
+  M(1, 3) = nnc::navsim_detail::kImageToTrackerTy;
+  M(2, 3) = nnc::navsim_detail::kImageToTrackerTz;
+  return M;
+}
 
 struct Options
 {
@@ -194,9 +218,9 @@ bool sendAll(int fd, const std::uint8_t *data, std::size_t size, std::string *er
   return true;
 }
 
+// toolInImage: tip-at-origin, shaft +Z, tip slides entry→target in image mm.
 nnc::Mat4 poseAlongPlan(float phase01)
 {
-  // Tip-at-origin, shaft +Z: identity rotation. Slide tip along entry→target.
   nnc::Mat4 pose = nnc::Mat4::identity();
   const float t = phase01 - static_cast<float>(static_cast<int>(phase01)); // wrap [0,1)
   pose(0, 3) = nnc::navsim_detail::kPlanEntry.x +
@@ -206,6 +230,11 @@ nnc::Mat4 poseAlongPlan(float phase01)
   pose(2, 3) = nnc::navsim_detail::kPlanEntry.z +
                t * (nnc::navsim_detail::kPlanTarget.z - nnc::navsim_detail::kPlanEntry.z);
   return pose;
+}
+
+nnc::Mat4 toolToTrackerAlongPlan(float phase01, const nnc::Mat4 &imageToTracker)
+{
+  return imageToTracker * nnc::navsim_detail::poseAlongPlan(phase01);
 }
 
 // Stream TRANSFORM poses at rateHz until the peer disconnects; then close clientFd.
@@ -223,7 +252,11 @@ bool streamPosesUntilDisconnect(int clientFd, int rateHz, std::string *error)
 
   const int periodMs = 1000 / rateHz;
   std::uint64_t frame = 0;
-  std::cout << "navsim: streaming TRANSFORM at " << rateHz << " Hz" << std::endl;
+  const nnc::Mat4 imageToTracker = nnc::navsim_detail::makeImageToTracker();
+  std::cout << "navsim: streaming TRANSFORM at " << rateHz
+            << " Hz (image→tracker pitch=30deg t=(" << nnc::navsim_detail::kImageToTrackerTx
+            << ',' << nnc::navsim_detail::kImageToTrackerTy << ','
+            << nnc::navsim_detail::kImageToTrackerTz << "))" << std::endl;
 
   while (true)
   {
@@ -268,7 +301,8 @@ bool streamPosesUntilDisconnect(int clientFd, int rateHz, std::string *error)
     // Timeout: send next pose. One full entry→target cycle about every 2 seconds.
     const float phase01 = static_cast<float>(frame % static_cast<std::uint64_t>(rateHz * 2)) /
                           static_cast<float>(rateHz * 2);
-    const nnc::Mat4 toolToTracker = nnc::navsim_detail::poseAlongPlan(phase01);
+    const nnc::Mat4 toolToTracker =
+        nnc::navsim_detail::toolToTrackerAlongPlan(phase01, imageToTracker);
 
     std::vector<std::uint8_t> bytes;
     if (!nnc::IgtlParser::packTransformMessage(toolToTracker, "Tool", frame, bytes, error))
