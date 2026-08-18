@@ -81,6 +81,18 @@ void expectMat4Near(const nnc::Mat4 &got, const nnc::Mat4 &expected, float eps =
   }
 }
 
+void expectRotationNear(const nnc::Mat4 &got, const nnc::Mat4 &expected, float eps = kTol)
+{
+  for (int row = 0; row < 3; ++row)
+  {
+    for (int col = 0; col < 3; ++col)
+    {
+      QVERIFY2(nnc::test_detail::nearlyEqual(got(row, col), expected(row, col), eps),
+               qPrintable(QStringLiteral("rotation mismatch at (%1,%2)").arg(row).arg(col)));
+    }
+  }
+}
+
 } // namespace test_detail
 } // namespace nnc
 
@@ -99,6 +111,8 @@ private slots:
   void recoversPureTranslation();
   void recoversIdentityRegistration();
   void recoversNavsimInverseRotation();
+  void cleanRegistrationHasNearZeroFre();
+  void noisySyntheticPairsHavePositiveFre();
 };
 
 void TstREQ_REG_001_PairedPointValidation::rejectsNullOutput()
@@ -247,6 +261,96 @@ void TstREQ_REG_001_PairedPointValidation::recoversNavsimInverseRotation()
   QVERIFY2(nnc::PairedPointRegistration::solve(pairs, &result, &err), err.c_str());
   QVERIFY(result.ok);
   nnc::test_detail::expectMat4Near(result.trackerToImage, trackerToImage);
+}
+
+void TstREQ_REG_001_PairedPointValidation::cleanRegistrationHasNearZeroFre()
+{
+  const std::vector<nnc::FiducialPair> identityPairs = {
+    nnc::test_detail::makePair(0.f, 0.f, 0.f, 0.f, 0.f, 0.f),
+    nnc::test_detail::makePair(1.f, 0.f, 0.f, 1.f, 0.f, 0.f),
+    nnc::test_detail::makePair(0.f, 1.f, 0.f, 0.f, 1.f, 0.f),
+    nnc::test_detail::makePair(0.f, 0.f, 1.f, 0.f, 0.f, 1.f),
+  };
+  nnc::RegistrationResult identityResult{};
+  std::string err;
+  QVERIFY2(nnc::PairedPointRegistration::solve(identityPairs, &identityResult, &err), err.c_str());
+  QCOMPARE(static_cast<int>(identityResult.residualMm.size()), 4);
+  QVERIFY(identityResult.freMm < 1e-4f);
+  for (float residual : identityResult.residualMm)
+  {
+    QVERIFY(residual < 1e-4f);
+  }
+
+  const nnc::Mat4 imageToTracker = nnc::test_detail::makeImageToTrackerGroundTruth();
+  nnc::Mat4 trackerToImage = nnc::Mat4::identity();
+  QVERIFY(imageToTracker.inverted(trackerToImage));
+  const nnc::Vec3 trackerPts[] = {
+    {0.f, 0.f, 0.f},
+    {20.f, -5.f, 10.f},
+    {-8.f, 12.f, 30.f},
+    {5.f, 5.f, -15.f},
+  };
+  std::vector<nnc::FiducialPair> navsimPairs;
+  navsimPairs.reserve(4);
+  for (const nnc::Vec3 &trackerPt : trackerPts)
+  {
+    nnc::Vec3 imagePt{};
+    nnc::test_detail::transformPoint(trackerToImage, trackerPt, &imagePt);
+    nnc::FiducialPair pair{};
+    pair.tracker = trackerPt;
+    pair.image = imagePt;
+    navsimPairs.push_back(pair);
+  }
+  nnc::RegistrationResult navsimResult{};
+  QVERIFY2(nnc::PairedPointRegistration::solve(navsimPairs, &navsimResult, &err), err.c_str());
+  QCOMPARE(static_cast<int>(navsimResult.residualMm.size()), 4);
+  QVERIFY(navsimResult.freMm < 1e-3f);
+}
+
+void TstREQ_REG_001_PairedPointValidation::noisySyntheticPairsHavePositiveFre()
+{
+  const nnc::Mat4 imageToTracker = nnc::test_detail::makeImageToTrackerGroundTruth();
+  nnc::Mat4 trackerToImage = nnc::Mat4::identity();
+  QVERIFY(imageToTracker.inverted(trackerToImage));
+
+  const nnc::Vec3 trackerPts[] = {
+    {0.f, 0.f, 0.f},
+    {25.f, 3.f, 8.f},
+    {-12.f, 18.f, 22.f},
+    {7.f, -6.f, -10.f},
+    {15.f, 15.f, 5.f},
+  };
+  const nnc::Vec3 imageJitter[] = {
+    {0.4f, -0.2f, 0.1f},
+    {-0.3f, 0.5f, 0.2f},
+    {0.2f, 0.3f, -0.4f},
+    {-0.5f, -0.1f, 0.3f},
+    {0.1f, -0.4f, -0.2f},
+  };
+
+  std::vector<nnc::FiducialPair> pairs;
+  pairs.reserve(5);
+  for (std::size_t i = 0; i < 5; ++i)
+  {
+    nnc::Vec3 imagePt{};
+    nnc::test_detail::transformPoint(trackerToImage, trackerPts[i], &imagePt);
+    imagePt.x += imageJitter[i].x;
+    imagePt.y += imageJitter[i].y;
+    imagePt.z += imageJitter[i].z;
+    nnc::FiducialPair pair{};
+    pair.tracker = trackerPts[i];
+    pair.image = imagePt;
+    pairs.push_back(pair);
+  }
+
+  nnc::RegistrationResult result{};
+  std::string err;
+  QVERIFY2(nnc::PairedPointRegistration::solve(pairs, &result, &err), err.c_str());
+  QVERIFY(result.ok);
+  QCOMPARE(static_cast<int>(result.residualMm.size()), 5);
+  QVERIFY(result.freMm > 0.1f);
+  QVERIFY(result.freMm < 1.f);
+  nnc::test_detail::expectRotationNear(result.trackerToImage, trackerToImage, 5e-2f);
 }
 
 QTEST_APPLESS_MAIN(TstREQ_REG_001_PairedPointValidation)

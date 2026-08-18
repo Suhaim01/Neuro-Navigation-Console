@@ -411,6 +411,34 @@ nnc::Mat4 mat4FromRotationTranslation(const nnc::paired_point_detail::Mat3 &rota
   return out;
 }
 
+void computeFreAndResiduals(const std::vector<nnc::FiducialPair> &pairs,
+                            const nnc::Mat4 &trackerToImage,
+                            nnc::RegistrationResult *out)
+{
+  out->residualMm.clear();
+  out->residualMm.reserve(pairs.size());
+
+  float sumSq = 0.f;
+  for (const nnc::FiducialPair &pair : pairs)
+  {
+    float predictedX = 0.f;
+    float predictedY = 0.f;
+    float predictedZ = 0.f;
+    trackerToImage.transformPoint(
+      pair.tracker.x, pair.tracker.y, pair.tracker.z, predictedX, predictedY, predictedZ);
+
+    const float dx = predictedX - pair.image.x;
+    const float dy = predictedY - pair.image.y;
+    const float dz = predictedZ - pair.image.z;
+    const float residual = std::sqrt(dx * dx + dy * dy + dz * dz);
+    out->residualMm.push_back(residual);
+    sumSq += residual * residual;
+  }
+
+  const float invN = 1.f / static_cast<float>(pairs.size());
+  out->freMm = std::sqrt(sumSq * invN);
+}
+
 bool hasDuplicatePoints(const std::vector<nnc::Vec3> &points,
                         const char *label,
                         std::string *error)
@@ -589,6 +617,7 @@ bool PairedPointRegistration::solve(const std::vector<nnc::FiducialPair> &pairs,
 
   out->trackerToImage =
     nnc::paired_point_detail::mat4FromRotationTranslation(rotation, translation);
+  nnc::paired_point_detail::computeFreAndResiduals(pairs, out->trackerToImage, out);
   out->ok = true;
   return true;
 }
