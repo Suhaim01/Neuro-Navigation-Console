@@ -25,3 +25,15 @@ target_link_libraries(tst_igtl_parse PRIVATE
 
 add_test(NAME tst_REQ_IGTL_TransformParse
          COMMAND $<TARGET_FILE:tst_igtl_parse>)
+
+add_executable(tst_paired_point_svd
+  tst_paired_point_svd.cpp
+)
+
+target_link_libraries(tst_paired_point_svd PRIVATE
+  nnc_reg
+  Qt5::Test
+)
+
+add_test(NAME tst_REQ_REG_001_PairedPointValidation
+         COMMAND $<TARGET_FILE:tst_paired_point_svd>)

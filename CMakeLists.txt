@@ -21,6 +21,7 @@ target_compile_options(nnc_warnings INTERFACE
 )
 
 add_subdirectory(src/io)
+add_subdirectory(src/reg)
 add_subdirectory(src/render)
 add_subdirectory(src/app)
 add_subdirectory(src/navsim)
