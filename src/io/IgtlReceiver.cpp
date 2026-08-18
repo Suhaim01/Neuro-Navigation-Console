@@ -323,11 +323,100 @@ int IgtlReceiver::connectToServer(const std::string &host, int port)
   return -1;
 }
 
+bool IgtlReceiver::readAndDispatch(int fd)
+{
+  std::uint8_t bytes[64 * 1024];
+  const ssize_t received = ::recv(fd, bytes, sizeof(bytes), 0);
+  if (received == 0)
+  {
+    return false;
+  }
+  if (received < 0)
+  {
+    if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+    {
+      return true;
+    }
+    qWarning().nospace() << "IgtlReceiver: recv failed: " << std::strerror(errno);
+    return false;
+  }
+
+  this->reassembler_.append(bytes, static_cast<std::size_t>(received));
+
+  while (true)
+  {
+    std::vector<std::uint8_t> message;
+    std::string framingError;
+    if (!this->reassembler_.tryExtractMessage(message, &framingError))
+    {
+      if (!framingError.empty())
+      {
+        qWarning().noquote()
+            << "IgtlReceiver: framing error:" << QString::fromStdString(framingError);
+      }
+      break;
+    }
+
+    nnc::IgtlHeader header;
+    std::string parseError;
+    if (!nnc::IgtlParser::parseHeader(
+            message.data(), message.size(), header, &parseError))
+    {
+      qWarning().noquote()
+          << "IgtlReceiver: header parse failed:" << QString::fromStdString(parseError);
+      continue;
+    }
+
+    if (std::strcmp(header.type, "TRAJ") == 0)
+    {
+      nnc::Vec3 entry;
+      nnc::Vec3 target;
+      if (!nnc::IgtlParser::parseTrajectoryMessage(
+              message.data(), message.size(), entry, target, &header, &parseError))
+      {
+        qWarning().noquote()
+            << "IgtlReceiver: TRAJ parse failed:" << QString::fromStdString(parseError);
+        continue;
+      }
+      qInfo().nospace() << "IgtlReceiver: parsed TRAJ entry=(" << entry.x << ',' << entry.y
+                        << ',' << entry.z << ") target=(" << target.x << ',' << target.y << ','
+                        << target.z << ')';
+      continue;
+    }
+
+    if (std::strcmp(header.type, "TRANSFORM") == 0)
+    {
+      nnc::Mat4 toolToTracker;
+      if (!nnc::IgtlParser::parseTransformMessage(
+              message.data(), message.size(), toolToTracker, &header, &parseError))
+      {
+        qWarning().noquote()
+            << "IgtlReceiver: TRANSFORM parse failed:" << QString::fromStdString(parseError);
+        continue;
+      }
+      if (!this->loggedTransform_)
+      {
+        qInfo().nospace() << "IgtlReceiver: parsed TRANSFORM device=" << header.deviceName
+                          << " tip=(" << toolToTracker(0, 3) << ',' << toolToTracker(1, 3) << ','
+                          << toolToTracker(2, 3) << ')';
+        this->loggedTransform_ = true;
+      }
+      continue;
+    }
+
+    qWarning().nospace() << "IgtlReceiver: ignoring unsupported type " << header.type;
+  }
+
+  return true;
+}
+
 void IgtlReceiver::run()
 {
   std::string host;
   int port = 0;
   this->resolveEndpoint(&host, &port);
+  this->reassembler_.clear();
+  this->loggedTransform_ = false;
 
   qInfo().nospace() << "IgtlReceiver: connecting to " << host.c_str() << ":" << port;
 
@@ -340,7 +429,6 @@ void IgtlReceiver::run()
 
   qInfo().nospace() << "IgtlReceiver: connected to " << host.c_str() << ":" << port;
 
-  // 3c: hold the connection until stop. Recv/parse arrives in 3d.
   while (!this->stopRequested_.load())
   {
     pollfd pfd{};
@@ -356,12 +444,19 @@ void IgtlReceiver::run()
       qWarning().nospace() << "IgtlReceiver: poll failed: " << std::strerror(errno);
       break;
     }
+    if (pr > 0 && (pfd.revents & POLLIN) != 0)
+    {
+      if (!this->readAndDispatch(fd))
+      {
+        qWarning() << "IgtlReceiver: peer closed or recv failed";
+        break;
+      }
+    }
     if (pr > 0 && (pfd.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0)
     {
       qWarning() << "IgtlReceiver: peer closed or socket error";
       break;
     }
-    // Readable data intentionally left unread until 3d.
   }
 
   this->closeSocket();
