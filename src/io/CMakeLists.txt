@@ -5,6 +5,7 @@ add_library(nnc_io
   IgtlParser.h
   IgtlReceiver.cpp
   IgtlReceiver.h
+  PoseTripleBuffer.h
 )
 
 target_include_directories(nnc_io PUBLIC

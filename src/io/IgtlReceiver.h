@@ -1,6 +1,7 @@
 #pragma once
 
 #include "io/IgtlParser.h"
+#include "io/PoseTripleBuffer.h"
 
 #include <QThread>
 
@@ -12,7 +13,7 @@ namespace nnc
 {
 
 // OpenIGTLink client worker. Owns its QThread (this object *is* the thread).
-// 3d: TCP connect + recv/reassemble/parse TRAJ and TRANSFORM.
+// 3e: parsed TRANSFORM poses publish into a triple buffer for the render path.
 class IgtlReceiver : public QThread
 {
   Q_OBJECT
@@ -31,6 +32,12 @@ public:
   // Request stop and join the worker thread.
   void stopReceiver();
 
+  // Render-path read of the latest toolToTracker (lock-free snapshot).
+  bool snapshotToolToTracker(nnc::Mat4 *out) const;
+  bool hasToolPose() const;
+  nnc::PoseTripleBuffer &poseBuffer();
+  const nnc::PoseTripleBuffer &poseBuffer() const;
+
 protected:
   void run() override;
 
@@ -47,6 +54,7 @@ private:
   std::atomic<bool> stopRequested_{false};
   std::atomic<int> socketFd_{-1};
   nnc::IgtlStreamReassembler reassembler_;
+  nnc::PoseTripleBuffer poseBuffer_;
   bool loggedTransform_ = false;
 
   mutable std::mutex endpointMutex_;

@@ -8,9 +8,9 @@
 namespace nnc
 {
 
-// Single source of truth for plan + live tool pose (minimal stub for Task 3).
-// Plan/pose setters will be called from IgtlReceiver's worker thread; getters
-// from the GUI/render path. Pose path will move to a triple buffer in 3e.
+// Single source of truth for plan (+ optional pose mirror). Live toolToTracker
+// for the render path comes from IgtlReceiver's PoseTripleBuffer (3e); SceneModel
+// pose setters remain for 3f plan handoff / optional mirror.
 class SceneModel
 {
 public:

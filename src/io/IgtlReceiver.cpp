@@ -139,6 +139,26 @@ void IgtlReceiver::stopReceiver()
   }
 }
 
+bool IgtlReceiver::snapshotToolToTracker(nnc::Mat4 *out) const
+{
+  return this->poseBuffer_.snapshot(out);
+}
+
+bool IgtlReceiver::hasToolPose() const
+{
+  return this->poseBuffer_.hasPose();
+}
+
+nnc::PoseTripleBuffer &IgtlReceiver::poseBuffer()
+{
+  return this->poseBuffer_;
+}
+
+const nnc::PoseTripleBuffer &IgtlReceiver::poseBuffer() const
+{
+  return this->poseBuffer_;
+}
+
 void IgtlReceiver::closeSocket()
 {
   const int fd = this->socketFd_.exchange(-1);
@@ -394,9 +414,10 @@ bool IgtlReceiver::readAndDispatch(int fd)
             << "IgtlReceiver: TRANSFORM parse failed:" << QString::fromStdString(parseError);
         continue;
       }
+      this->poseBuffer_.publish(toolToTracker);
       if (!this->loggedTransform_)
       {
-        qInfo().nospace() << "IgtlReceiver: parsed TRANSFORM device=" << header.deviceName
+        qInfo().nospace() << "IgtlReceiver: published TRANSFORM device=" << header.deviceName
                           << " tip=(" << toolToTracker(0, 3) << ',' << toolToTracker(1, 3) << ','
                           << toolToTracker(2, 3) << ')';
         this->loggedTransform_ = true;
@@ -416,6 +437,7 @@ void IgtlReceiver::run()
   int port = 0;
   this->resolveEndpoint(&host, &port);
   this->reassembler_.clear();
+  this->poseBuffer_.clear();
   this->loggedTransform_ = false;
 
   qInfo().nospace() << "IgtlReceiver: connecting to " << host.c_str() << ":" << port;
