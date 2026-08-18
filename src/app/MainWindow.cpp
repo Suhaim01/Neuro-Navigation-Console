@@ -88,3 +88,13 @@ MainWindow::MainWindow(QWidget* parent)
 
   this->setCentralWidget(central);
 }
+
+nnc::SceneModel &MainWindow::sceneModel()
+{
+  return this->sceneModel_;
+}
+
+const nnc::SceneModel &MainWindow::sceneModel() const
+{
+  return this->sceneModel_;
+}
