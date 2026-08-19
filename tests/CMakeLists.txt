@@ -53,3 +53,15 @@ target_link_libraries(tst_fiducial_loader PRIVATE
 
 add_test(NAME tst_REQ_REG_002_FiducialLoader
          COMMAND $<TARGET_FILE:tst_fiducial_loader>)
+
+add_executable(tst_tool_composition
+  tst_tool_composition.cpp
+)
+
+target_link_libraries(tst_tool_composition PRIVATE
+  nnc_reg
+  Qt5::Test
+)
+
+add_test(NAME tst_REQ_FRAME_004_ToolComposition
+         COMMAND $<TARGET_FILE:tst_tool_composition>)

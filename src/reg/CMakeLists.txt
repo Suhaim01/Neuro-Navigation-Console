@@ -3,6 +3,8 @@ add_library(nnc_reg
   FiducialLoader.h
   PairedPointRegistration.cpp
   PairedPointRegistration.h
+  ToolComposition.cpp
+  ToolComposition.h
 )
 
 target_include_directories(nnc_reg PUBLIC
