@@ -1,5 +1,7 @@
 #include "app/MainWindow.h"
 
+#include "reg/ToolComposition.h"
+
 #include <QApplication>
 #include <QMessageBox>
 #include <QTimer>
@@ -90,10 +92,30 @@ IgtlCli parseArgs(int argc, char **argv)
 
 void runIgtlSmoke(QApplication &app, MainWindow &window)
 {
+  struct SmokeState
+  {
+    bool haveFirstTip = false;
+    nnc::Vec3 firstTip{};
+  };
+  auto *state = new SmokeState();
+
   auto *pollTimer = new QTimer(&app);
   pollTimer->setInterval(100);
-  QObject::connect(pollTimer, &QTimer::timeout, &app, [&app, &window]()
+  QObject::connect(pollTimer, &QTimer::timeout, &app, [&app, &window, state]()
   {
+    if (!window.sceneModel().hasRegistration())
+    {
+      std::cerr << "nnc_console --igtl-smoke: SceneModel has no registration\n";
+      QApplication::exit(1);
+      return;
+    }
+    if (window.sceneModel().freMm() > 1e-3f)
+    {
+      std::cerr << "nnc_console --igtl-smoke: registration FRE too high: "
+                << window.sceneModel().freMm() << " mm\n";
+      QApplication::exit(1);
+      return;
+    }
     if (!window.sceneModel().hasPlan() || !window.igtlReceiver().hasToolPose())
     {
       return;
@@ -105,9 +127,14 @@ void runIgtlSmoke(QApplication &app, MainWindow &window)
       return;
     }
 
-    const float tx = toolToTracker(0, 3);
-    const float ty = toolToTracker(1, 3);
-    const float tz = toolToTracker(2, 3);
+    nnc::Vec3 tipImageMm{};
+    if (!nnc::ToolComposition::composeToolTipInImage(
+          window.sceneModel().trackerToImage(), toolToTracker, nullptr, &tipImageMm))
+    {
+      std::cerr << "nnc_console --igtl-smoke: tool composition failed\n";
+      QApplication::exit(1);
+      return;
+    }
 
     const nnc::Vec3 entry = window.sceneModel().planEntry();
     const nnc::Vec3 target = window.sceneModel().planTarget();
@@ -122,10 +149,38 @@ void runIgtlSmoke(QApplication &app, MainWindow &window)
       return;
     }
 
+    if (std::abs(tipImageMm.x) > 1.f || std::abs(tipImageMm.y) > 1.f || tipImageMm.z < -1.f ||
+        tipImageMm.z > 81.f)
+    {
+      std::cerr << "nnc_console --igtl-smoke: composed tip off plan axis image=("
+                << tipImageMm.x << ',' << tipImageMm.y << ',' << tipImageMm.z << ")\n";
+      QApplication::exit(1);
+      return;
+    }
+
+    if (!state->haveFirstTip)
+    {
+      state->firstTip = tipImageMm;
+      state->haveFirstTip = true;
+      return;
+    }
+
+    if (std::abs(tipImageMm.z - state->firstTip.z) < 0.5f)
+    {
+      return;
+    }
+
+    const float tx = toolToTracker(0, 3);
+    const float ty = toolToTracker(1, 3);
+    const float tz = toolToTracker(2, 3);
+
     std::cout << "igtl smoke ok\n"
+              << "  registration FRE=" << window.sceneModel().freMm() << " mm\n"
               << "  plan entry=(" << entry.x << ',' << entry.y << ',' << entry.z << ")"
               << " target=(" << target.x << ',' << target.y << ',' << target.z << ")\n"
-              << "  tool tip=(" << tx << ',' << ty << ',' << tz << ")\n";
+              << "  tool tip tracker=(" << tx << ',' << ty << ',' << tz << ")\n"
+              << "  tool tip image=(" << tipImageMm.x << ',' << tipImageMm.y << ','
+              << tipImageMm.z << ")\n";
     QApplication::exit(0);
   });
 

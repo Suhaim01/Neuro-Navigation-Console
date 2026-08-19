@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Smoke-check IgtlReceiver: navsim + nnc_console --igtl-smoke (TRAJ + TRANSFORM).
+# Smoke-check IgtlReceiver + registration: navsim + nnc_console --igtl-smoke
+# (TRAJ + TRANSFORM + trackerToImage + composed tip on plan axis).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

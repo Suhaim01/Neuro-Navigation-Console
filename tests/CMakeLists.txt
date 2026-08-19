@@ -65,3 +65,26 @@ target_link_libraries(tst_tool_composition PRIVATE
 
 add_test(NAME tst_REQ_FRAME_004_ToolComposition
          COMMAND $<TARGET_FILE:tst_tool_composition>)
+
+add_executable(tst_registration_bootstrap
+  tst_registration_bootstrap.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/SceneModel.cpp
+  ${CMAKE_SOURCE_DIR}/src/app/RegistrationBootstrap.cpp
+)
+
+target_compile_definitions(tst_registration_bootstrap PRIVATE
+  NNC_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
+)
+
+target_include_directories(tst_registration_bootstrap PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(tst_registration_bootstrap PRIVATE
+  nnc_reg
+  nnc_io
+  Qt5::Test
+)
+
+add_test(NAME tst_REQ_REG_002_RegistrationBootstrap
+         COMMAND $<TARGET_FILE:tst_registration_bootstrap>)

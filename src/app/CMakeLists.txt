@@ -2,6 +2,8 @@ add_executable(nnc_console
   main.cpp
   MainWindow.cpp
   MainWindow.h
+  RegistrationBootstrap.cpp
+  RegistrationBootstrap.h
   SceneModel.cpp
   SceneModel.h
   VolumeUploadSurface.cpp

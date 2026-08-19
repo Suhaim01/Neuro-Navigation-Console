@@ -1,8 +1,7 @@
 #include "app/MainWindow.h"
 
 #include "app/VolumeUploadSurface.h"
-#include "reg/FiducialLoader.h"
-#include "reg/PairedPointRegistration.h"
+#include "app/RegistrationBootstrap.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -15,48 +14,11 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <string>
-#include <vector>
 
 namespace nnc
 {
 namespace detail
 {
-
-bool bootstrapRegistration(nnc::SceneModel *sceneModel)
-{
-  if (sceneModel == nullptr)
-  {
-    std::cerr << "nnc_console: registration bootstrap: null SceneModel\n";
-    return false;
-  }
-
-  const std::string path = nnc::FiducialLoader::resolvePath();
-  std::vector<nnc::FiducialPair> pairs;
-  std::string err;
-  if (!nnc::FiducialLoader::load(path, &pairs, &err))
-  {
-    std::cerr << "nnc_console: failed to load fiducials from " << path << ": " << err << '\n';
-    return false;
-  }
-
-  nnc::RegistrationResult result{};
-  if (!nnc::PairedPointRegistration::solve(pairs, &result, &err))
-  {
-    std::cerr << "nnc_console: registration solve failed: " << err << '\n';
-    return false;
-  }
-  if (!result.ok)
-  {
-    std::cerr << "nnc_console: registration solve returned ok=false\n";
-    return false;
-  }
-
-  sceneModel->setRegistration(result);
-  std::cerr << "nnc_console: registration ok path=" << path << " FRE=" << result.freMm
-            << " mm landmarks=" << pairs.size() << '\n';
-  return true;
-}
 
 QWidget *makeOrientationPane(nnc::VolumeUploadSurface *surface,
                              const QString &title,
@@ -81,7 +43,7 @@ QWidget *makeOrientationPane(nnc::VolumeUploadSurface *surface,
 MainWindow::MainWindow(const std::string &igtlHost, int igtlPort, QWidget *parent)
     : QMainWindow(parent)
 {
-  if (!nnc::detail::bootstrapRegistration(&this->sceneModel_))
+  if (!nnc::bootstrapRegistration(&this->sceneModel_))
   {
     std::exit(1);
   }
