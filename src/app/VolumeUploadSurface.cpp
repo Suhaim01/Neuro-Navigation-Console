@@ -3,6 +3,7 @@
 #include "app/SceneModel.h"
 #include "io/IgtlReceiver.h"
 #include "io/NiftiLoader.h"
+#include "reg/PatientNorm.h"
 #include "reg/ToolComposition.h"
 
 #include <QCoreApplication>
@@ -121,23 +122,16 @@ void intensityRange(const nnc::NiftiVolume& volume, float& outMin, float& outMax
   }
 }
 
-float normalizePatientAxis(float valueMm, float minMm, float maxMm)
+nnc::PatientBounds patientBoundsFromQVector(const QVector3D &patientMin, const QVector3D &patientMax)
 {
-  const float span = maxMm - minMm;
-  if (std::fabs(span) < 1e-6f) {
-    return 0.5f;
-  }
-  return std::clamp((valueMm - minMm) / span, 0.f, 1.f);
-}
-
-QVector3D imageMmToFocusNorm(const nnc::Vec3& tipImageMm,
-                             const QVector3D& patientMin,
-                             const QVector3D& patientMax)
-{
-  return QVector3D(
-      nnc::detail::normalizePatientAxis(tipImageMm.x, patientMin.x(), patientMax.x()),
-      nnc::detail::normalizePatientAxis(tipImageMm.y, patientMin.y(), patientMax.y()),
-      nnc::detail::normalizePatientAxis(tipImageMm.z, patientMin.z(), patientMax.z()));
+  nnc::PatientBounds bounds{};
+  bounds.minMm.x = patientMin.x();
+  bounds.minMm.y = patientMin.y();
+  bounds.minMm.z = patientMin.z();
+  bounds.maxMm.x = patientMax.x();
+  bounds.maxMm.y = patientMax.y();
+  bounds.maxMm.z = patientMax.z();
+  return bounds;
 }
 
 }  // namespace detail
@@ -194,8 +188,11 @@ bool VolumeUploadSurface::applyNavigationFocus(const nnc::SceneModel* sceneModel
     return false;
   }
 
-  const QVector3D focusNorm =
-      nnc::detail::imageMmToFocusNorm(tipImageMm, this->patientMin_, this->patientMax_);
+  const nnc::PatientBounds patientBounds =
+      nnc::detail::patientBoundsFromQVector(this->patientMin_, this->patientMax_);
+  const nnc::Vec3 focusNormVec =
+      nnc::imageMmToFocusNorm(tipImageMm, patientBounds);
+  const QVector3D focusNorm(focusNormVec.x, focusNormVec.y, focusNormVec.z);
   const QVector3D clamped(
       std::clamp(focusNorm.x(), 0.f, 1.f),
       std::clamp(focusNorm.y(), 0.f, 1.f),

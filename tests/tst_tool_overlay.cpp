@@ -24,6 +24,20 @@ void expectVec3Near(const nnc::Vec3 &got, const nnc::Vec3 &expected, float eps =
   QVERIFY(nnc::test_detail::nearlyEqual(got.z, expected.z, eps));
 }
 
+void expectUvNear(const nnc::SliceUv &got, const nnc::SliceUv &expected, float eps = kTol)
+{
+  QVERIFY(nnc::test_detail::nearlyEqual(got.u, expected.u, eps));
+  QVERIFY(nnc::test_detail::nearlyEqual(got.v, expected.v, eps));
+}
+
+nnc::PatientBounds unitCubeBounds()
+{
+  nnc::PatientBounds bounds{};
+  bounds.minMm = nnc::Vec3{0.f, 0.f, 0.f};
+  bounds.maxMm = nnc::Vec3{100.f, 100.f, 100.f};
+  return bounds;
+}
+
 nnc::Mat4 translationMat4(float tx, float ty, float tz)
 {
   nnc::Mat4 m = nnc::Mat4::identity();
@@ -60,6 +74,10 @@ private slots:
   void identityPoseYieldsOriginAndPlusZShaft();
   void translationOnlyMovesTipNotShaftDir();
   void rotatedPoseRotatesShaftDirAndEndpoint();
+  void rejectsNullSliceProjectionOutput();
+  void axialProjectionMatchesCrossUvConvention();
+  void coronalAndSagittalProjectionsMatchCrossUvConvention();
+  void projectedShaftUvFollowsPlusZOnCoronalView();
 };
 
 void TstREQ_GUI_001_ToolOverlayImage::rejectsNullOutput()
@@ -112,6 +130,71 @@ void TstREQ_GUI_001_ToolOverlayImage::rotatedPoseRotatesShaftDirAndEndpoint()
       40.f + expectedDir.x * nnc::kShaftDisplayLengthMm,
       -25.f,
       15.f + expectedDir.z * nnc::kShaftDisplayLengthMm});
+}
+
+void TstREQ_GUI_001_ToolOverlayImage::rejectsNullSliceProjectionOutput()
+{
+  const nnc::PatientBounds bounds = nnc::test_detail::unitCubeBounds();
+  const nnc::ToolOverlayImage imageGeom{};
+  QVERIFY(!nnc::ToolOverlay::projectToolOverlaySlice(
+    nnc::SliceOrientation::Axial, bounds, imageGeom, nullptr));
+}
+
+void TstREQ_GUI_001_ToolOverlayImage::axialProjectionMatchesCrossUvConvention()
+{
+  const nnc::PatientBounds bounds = nnc::test_detail::unitCubeBounds();
+  const nnc::ToolOverlayImage imageGeom{
+    nnc::Vec3{25.f, 50.f, 75.f},
+    nnc::Vec3{0.f, 0.f, 1.f},
+    nnc::Vec3{25.f, 50.f, 135.f}};
+
+  nnc::ToolOverlaySlice slice{};
+  QVERIFY(nnc::ToolOverlay::projectToolOverlaySlice(
+    nnc::SliceOrientation::Axial, bounds, imageGeom, &slice));
+  QVERIFY(slice.visible);
+  nnc::test_detail::expectUvNear(slice.tipUv, nnc::SliceUv{0.25f, 0.5f});
+  nnc::test_detail::expectUvNear(slice.shaftUv, nnc::SliceUv{0.25f, 0.5f});
+}
+
+void TstREQ_GUI_001_ToolOverlayImage::coronalAndSagittalProjectionsMatchCrossUvConvention()
+{
+  const nnc::PatientBounds bounds = nnc::test_detail::unitCubeBounds();
+  const nnc::ToolOverlayImage imageGeom{
+    nnc::Vec3{20.f, 40.f, 60.f},
+    nnc::Vec3{0.f, 0.f, 1.f},
+    nnc::Vec3{20.f, 40.f, 120.f}};
+
+  nnc::ToolOverlaySlice coronal{};
+  QVERIFY(nnc::ToolOverlay::projectToolOverlaySlice(
+    nnc::SliceOrientation::Coronal, bounds, imageGeom, &coronal));
+  nnc::test_detail::expectUvNear(coronal.tipUv, nnc::SliceUv{0.2f, 0.6f});
+
+  nnc::ToolOverlaySlice sagittal{};
+  QVERIFY(nnc::ToolOverlay::projectToolOverlaySlice(
+    nnc::SliceOrientation::Sagittal, bounds, imageGeom, &sagittal));
+  nnc::test_detail::expectUvNear(sagittal.tipUv, nnc::SliceUv{0.4f, 0.6f});
+}
+
+void TstREQ_GUI_001_ToolOverlayImage::projectedShaftUvFollowsPlusZOnCoronalView()
+{
+  const nnc::PatientBounds bounds = nnc::test_detail::unitCubeBounds();
+  const nnc::Mat4 toolInImage = nnc::Mat4::identity();
+  nnc::ToolOverlayImage imageGeom{};
+  QVERIFY(nnc::ToolOverlay::toolGeometryInImage(toolInImage, &imageGeom));
+
+  nnc::ToolOverlaySlice axial{};
+  QVERIFY(nnc::ToolOverlay::projectToolOverlaySlice(
+    nnc::SliceOrientation::Axial, bounds, imageGeom, &axial));
+  nnc::test_detail::expectUvNear(axial.tipUv, nnc::SliceUv{0.f, 0.f});
+  nnc::test_detail::expectUvNear(axial.shaftUv, nnc::SliceUv{0.f, 0.f});
+
+  nnc::ToolOverlaySlice coronal{};
+  QVERIFY(nnc::ToolOverlay::projectToolOverlaySlice(
+    nnc::SliceOrientation::Coronal, bounds, imageGeom, &coronal));
+  nnc::test_detail::expectUvNear(coronal.tipUv, nnc::SliceUv{0.f, 0.f});
+  nnc::test_detail::expectUvNear(
+    coronal.shaftUv,
+    nnc::SliceUv{0.f, nnc::kShaftDisplayLengthMm / 100.f});
 }
 
 QTEST_APPLESS_MAIN(TstREQ_GUI_001_ToolOverlayImage)

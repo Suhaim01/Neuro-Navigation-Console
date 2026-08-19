@@ -1,6 +1,7 @@
 #pragma once
 
 #include "io/NiftiLoader.h"
+#include "reg/SliceOrientation.h"
 #include "render/VolumeTexture.h"
 
 #include <QMouseEvent>
@@ -20,11 +21,7 @@ class IgtlReceiver;
 class SceneModel;
 
 // Patient-space MPR (Slicer): axial=fixed z, coronal=fixed y, sagittal=fixed x.
-enum class SliceOrientation {
-  Axial = 0,
-  Coronal = 1,
-  Sagittal = 2
-};
+// SliceOrientation lives in reg/SliceOrientation.h.
 
 // Visible GL surface: uploads volume and draws one orientation with shared focus.
 class VolumeUploadSurface : public QOpenGLWidget, protected QOpenGLFunctions

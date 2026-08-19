@@ -46,6 +46,17 @@ nnc::Vec3 shaftDirectionFromToolInImage(const nnc::Mat4 &toolInImage)
   return nnc::Vec3{toolInImage(0, 2), toolInImage(1, 2), toolInImage(2, 2)};
 }
 
+bool vec3Finite(const nnc::Vec3 &v)
+{
+  return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+bool patientBoundsFinite(const nnc::PatientBounds &bounds)
+{
+  return nnc::tool_overlay_detail::vec3Finite(bounds.minMm) &&
+         nnc::tool_overlay_detail::vec3Finite(bounds.maxMm);
+}
+
 } // namespace tool_overlay_detail
 
 bool ToolOverlay::toolGeometryInImage(const nnc::Mat4 &toolInImage, nnc::ToolOverlayImage *out)
@@ -73,6 +84,31 @@ bool ToolOverlay::toolGeometryInImage(const nnc::Mat4 &toolInImage, nnc::ToolOve
   out->shaftEndMm.x = out->tipMm.x + out->shaftDirMm.x * nnc::kShaftDisplayLengthMm;
   out->shaftEndMm.y = out->tipMm.y + out->shaftDirMm.y * nnc::kShaftDisplayLengthMm;
   out->shaftEndMm.z = out->tipMm.z + out->shaftDirMm.z * nnc::kShaftDisplayLengthMm;
+  return true;
+}
+
+bool ToolOverlay::projectToolOverlaySlice(nnc::SliceOrientation orientation,
+                                            const nnc::PatientBounds &patientBounds,
+                                            const nnc::ToolOverlayImage &imageGeom,
+                                            nnc::ToolOverlaySlice *out)
+{
+  if (out == nullptr)
+  {
+    return false;
+  }
+  if (!nnc::tool_overlay_detail::patientBoundsFinite(patientBounds))
+  {
+    return false;
+  }
+  if (!nnc::tool_overlay_detail::vec3Finite(imageGeom.tipMm) ||
+      !nnc::tool_overlay_detail::vec3Finite(imageGeom.shaftEndMm))
+  {
+    return false;
+  }
+
+  out->tipUv = nnc::imageMmToSliceUv(orientation, patientBounds, imageGeom.tipMm);
+  out->shaftUv = nnc::imageMmToSliceUv(orientation, patientBounds, imageGeom.shaftEndMm);
+  out->visible = true;
   return true;
 }
 
