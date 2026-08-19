@@ -41,6 +41,10 @@ public:
                             const nnc::IgtlReceiver* igtlReceiver,
                             QString* statusOut = nullptr);
 
+  bool toolOverlayVisible() const { return this->toolOverlayVisible_; }
+  QVector2D toolTipUv() const { return this->toolTipUv_; }
+  QVector2D toolShaftUv() const { return this->toolShaftUv_; }
+
 signals:
   void statusChanged(const QString& text);
   void focusChanged(const QVector3D& focusNorm);
@@ -62,6 +66,8 @@ private:
   void applyPanDrag(const QPoint& pos);
   float sliceNorm() const;
   QVector2D crossUv() const;
+  void clearLiveToolOverlay();
+  void updateLiveToolOverlay(const nnc::Mat4& toolInImage);
 
   SliceOrientation orientation_;
   VolumeTexture texture_;
@@ -79,6 +85,9 @@ private:
   QPoint lastViewCenterPos_;
   bool panning_ = false;
   QString volumeStatusText_;
+  bool toolOverlayVisible_ = false;
+  QVector2D toolTipUv_{0.5f, 0.5f};
+  QVector2D toolShaftUv_{0.5f, 0.5f};
 
   QOpenGLShaderProgram program_;
   QOpenGLVertexArrayObject vao_;

@@ -5,6 +5,7 @@
 #include "io/NiftiLoader.h"
 #include "reg/PatientNorm.h"
 #include "reg/ToolComposition.h"
+#include "reg/ToolOverlay.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -134,6 +135,11 @@ nnc::PatientBounds patientBoundsFromQVector(const QVector3D &patientMin, const Q
   return bounds;
 }
 
+QVector2D sliceUvToQVector(const nnc::SliceUv& sliceUv)
+{
+  return QVector2D(sliceUv.u, sliceUv.v);
+}
+
 }  // namespace detail
 
 VolumeUploadSurface::VolumeUploadSurface(SliceOrientation orientation, QWidget* parent)
@@ -165,19 +171,64 @@ void VolumeUploadSurface::setFocusNorm(const QVector3D& focusNorm)
   this->update();
 }
 
+void VolumeUploadSurface::clearLiveToolOverlay()
+{
+  if (!this->toolOverlayVisible_)
+  {
+    return;
+  }
+  this->toolOverlayVisible_ = false;
+  this->update();
+}
+
+void VolumeUploadSurface::updateLiveToolOverlay(const nnc::Mat4& toolInImage)
+{
+  nnc::ToolOverlayImage imageGeom{};
+  if (!nnc::ToolOverlay::toolGeometryInImage(toolInImage, &imageGeom))
+  {
+    this->clearLiveToolOverlay();
+    return;
+  }
+
+  const nnc::PatientBounds patientBounds =
+      nnc::detail::patientBoundsFromQVector(this->patientMin_, this->patientMax_);
+  nnc::ToolOverlaySlice slice{};
+  if (!nnc::ToolOverlay::projectToolOverlaySlice(
+          this->orientation_, patientBounds, imageGeom, &slice))
+  {
+    this->clearLiveToolOverlay();
+    return;
+  }
+
+  const QVector2D tipUv = nnc::detail::sliceUvToQVector(slice.tipUv);
+  const QVector2D shaftUv = nnc::detail::sliceUvToQVector(slice.shaftUv);
+  const bool changed = !this->toolOverlayVisible_ ||
+                       this->toolTipUv_ != tipUv || this->toolShaftUv_ != shaftUv;
+  this->toolOverlayVisible_ = slice.visible;
+  this->toolTipUv_ = tipUv;
+  this->toolShaftUv_ = shaftUv;
+  if (changed)
+  {
+    this->update();
+  }
+}
+
 bool VolumeUploadSurface::applyNavigationFocus(const nnc::SceneModel* sceneModel,
                                                const nnc::IgtlReceiver* igtlReceiver,
                                                QString* statusOut)
 {
   if (!this->pipelineReady_ || sceneModel == nullptr || igtlReceiver == nullptr) {
+    this->clearLiveToolOverlay();
     return false;
   }
   if (!sceneModel->hasRegistration() || !igtlReceiver->hasToolPose()) {
+    this->clearLiveToolOverlay();
     return false;
   }
 
   nnc::Mat4 toolToTracker = nnc::Mat4::identity();
   if (!igtlReceiver->snapshotToolToTracker(&toolToTracker)) {
+    this->clearLiveToolOverlay();
     return false;
   }
 
@@ -185,6 +236,7 @@ bool VolumeUploadSurface::applyNavigationFocus(const nnc::SceneModel* sceneModel
   nnc::Vec3 tipImageMm{};
   if (!nnc::ToolComposition::composeToolTipInImage(
           sceneModel->trackerToImage(), toolToTracker, &toolInImage, &tipImageMm)) {
+    this->clearLiveToolOverlay();
     return false;
   }
 
@@ -227,6 +279,7 @@ bool VolumeUploadSurface::applyNavigationFocus(const nnc::SceneModel* sceneModel
             .arg(static_cast<double>(sceneModel->freMm()), 0, 'g', 4);
   }
 
+  this->updateLiveToolOverlay(toolInImage);
   return true;
 }
 

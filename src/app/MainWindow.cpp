@@ -115,6 +115,8 @@ MainWindow::MainWindow(const std::string &igtlHost, int igtlPort, QWidget *paren
     QString navStatus;
     const bool tracking =
       axial->applyNavigationFocus(&this->sceneModel_, &this->igtlReceiver_, &navStatus);
+    coronal->applyNavigationFocus(&this->sceneModel_, &this->igtlReceiver_, nullptr);
+    sagittal->applyNavigationFocus(&this->sceneModel_, &this->igtlReceiver_, nullptr);
     if (tracking)
     {
       statusLabel->setText(navStatus);
