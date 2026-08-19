@@ -14,6 +14,7 @@ target_compile_definitions(nnc_console PRIVATE
 
 target_link_libraries(nnc_console PRIVATE
   nnc_io
+  nnc_reg
   nnc_render
   Qt5::Widgets
   Qt5::OpenGL
