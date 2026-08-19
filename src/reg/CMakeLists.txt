@@ -5,6 +5,8 @@ add_library(nnc_reg
   PairedPointRegistration.h
   ToolComposition.cpp
   ToolComposition.h
+  ToolOverlay.cpp
+  ToolOverlay.h
 )
 
 target_include_directories(nnc_reg PUBLIC

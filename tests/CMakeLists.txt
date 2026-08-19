@@ -66,6 +66,18 @@ target_link_libraries(tst_tool_composition PRIVATE
 add_test(NAME tst_REQ_FRAME_004_ToolComposition
          COMMAND $<TARGET_FILE:tst_tool_composition>)
 
+add_executable(tst_tool_overlay
+  tst_tool_overlay.cpp
+)
+
+target_link_libraries(tst_tool_overlay PRIVATE
+  nnc_reg
+  Qt5::Test
+)
+
+add_test(NAME tst_REQ_GUI_001_ToolOverlayImage
+         COMMAND $<TARGET_FILE:tst_tool_overlay>)
+
 add_executable(tst_registration_bootstrap
   tst_registration_bootstrap.cpp
   ${CMAKE_SOURCE_DIR}/src/app/SceneModel.cpp
