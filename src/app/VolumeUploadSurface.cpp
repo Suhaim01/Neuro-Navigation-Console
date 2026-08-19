@@ -1,6 +1,9 @@
 #include "app/VolumeUploadSurface.h"
 
+#include "app/SceneModel.h"
+#include "io/IgtlReceiver.h"
 #include "io/NiftiLoader.h"
+#include "reg/ToolComposition.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -118,6 +121,25 @@ void intensityRange(const nnc::NiftiVolume& volume, float& outMin, float& outMax
   }
 }
 
+float normalizePatientAxis(float valueMm, float minMm, float maxMm)
+{
+  const float span = maxMm - minMm;
+  if (std::fabs(span) < 1e-6f) {
+    return 0.5f;
+  }
+  return std::clamp((valueMm - minMm) / span, 0.f, 1.f);
+}
+
+QVector3D imageMmToFocusNorm(const nnc::Vec3& tipImageMm,
+                             const QVector3D& patientMin,
+                             const QVector3D& patientMax)
+{
+  return QVector3D(
+      nnc::detail::normalizePatientAxis(tipImageMm.x, patientMin.x(), patientMax.x()),
+      nnc::detail::normalizePatientAxis(tipImageMm.y, patientMin.y(), patientMax.y()),
+      nnc::detail::normalizePatientAxis(tipImageMm.z, patientMin.z(), patientMax.z()));
+}
+
 }  // namespace detail
 
 VolumeUploadSurface::VolumeUploadSurface(SliceOrientation orientation, QWidget* parent)
@@ -147,6 +169,68 @@ void VolumeUploadSurface::setFocusNorm(const QVector3D& focusNorm)
   }
   this->focusNorm_ = clamped;
   this->update();
+}
+
+bool VolumeUploadSurface::applyNavigationFocus(const nnc::SceneModel* sceneModel,
+                                               const nnc::IgtlReceiver* igtlReceiver,
+                                               QString* statusOut)
+{
+  if (!this->pipelineReady_ || sceneModel == nullptr || igtlReceiver == nullptr) {
+    return false;
+  }
+  if (!sceneModel->hasRegistration() || !igtlReceiver->hasToolPose()) {
+    return false;
+  }
+
+  nnc::Mat4 toolToTracker = nnc::Mat4::identity();
+  if (!igtlReceiver->snapshotToolToTracker(&toolToTracker)) {
+    return false;
+  }
+
+  nnc::Mat4 toolInImage = nnc::Mat4::identity();
+  nnc::Vec3 tipImageMm{};
+  if (!nnc::ToolComposition::composeToolTipInImage(
+          sceneModel->trackerToImage(), toolToTracker, &toolInImage, &tipImageMm)) {
+    return false;
+  }
+
+  const QVector3D focusNorm =
+      nnc::detail::imageMmToFocusNorm(tipImageMm, this->patientMin_, this->patientMax_);
+  const QVector3D clamped(
+      std::clamp(focusNorm.x(), 0.f, 1.f),
+      std::clamp(focusNorm.y(), 0.f, 1.f),
+      std::clamp(focusNorm.z(), 0.f, 1.f));
+  if (this->focusNorm_ != clamped)
+  {
+    emit this->focusChanged(clamped);
+  }
+
+  if (statusOut != nullptr) {
+    float vx = 0.f;
+    float vy = 0.f;
+    float vz = 0.f;
+    this->voxelFromImage_.transformPoint(
+        tipImageMm.x, tipImageMm.y, tipImageMm.z, vx, vy, vz);
+    *statusOut =
+        this->volumeStatusText_ +
+        QStringLiteral("\n\nLive navigation (Task 5):\n"
+                       "  tool tip image mm: (%1, %2, %3)\n"
+                       "  tool tip voxel: (%4, %5, %6)\n"
+                       "  focusNorm: (%7, %8, %9)\n"
+                       "  registration FRE: %10 mm")
+            .arg(static_cast<double>(tipImageMm.x), 0, 'f', 2)
+            .arg(static_cast<double>(tipImageMm.y), 0, 'f', 2)
+            .arg(static_cast<double>(tipImageMm.z), 0, 'f', 2)
+            .arg(static_cast<double>(vx), 0, 'f', 2)
+            .arg(static_cast<double>(vy), 0, 'f', 2)
+            .arg(static_cast<double>(vz), 0, 'f', 2)
+            .arg(static_cast<double>(clamped.x()), 0, 'f', 3)
+            .arg(static_cast<double>(clamped.y()), 0, 'f', 3)
+            .arg(static_cast<double>(clamped.z()), 0, 'f', 3)
+            .arg(static_cast<double>(sceneModel->freMm()), 0, 'g', 4);
+  }
+
+  return true;
 }
 
 float VolumeUploadSurface::sliceNorm() const
@@ -406,7 +490,7 @@ void VolumeUploadSurface::initializeGL()
     return;
   }
 
-  emit this->statusChanged(
+  this->volumeStatusText_ =
       QStringLiteral(
           "Task 8 §7c: middle-drag to pan; wheel zoom; left-drag crosshair.\n"
           "Size: %1 × %2 × %3\n"
@@ -420,7 +504,8 @@ void VolumeUploadSurface::initializeGL()
           .arg(this->windowLevel_)
           .arg(this->windowWidth_)
           .arg(this->texture_.textureId())
-          .arg(path));
+          .arg(path);
+  emit this->statusChanged(this->volumeStatusText_);
 }
 
 void VolumeUploadSurface::resizeGL(int w, int h)

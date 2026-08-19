@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QObject>
 #include <QSurfaceFormat>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QVector3D>
 #include <QWidget>
@@ -144,6 +145,26 @@ MainWindow::MainWindow(const std::string &igtlHost, int igtlPort, QWidget *paren
   }
   this->igtlReceiver_.setSceneModel(&this->sceneModel_);
   this->igtlReceiver_.startReceiver();
+
+  QTimer *navTimer = new QTimer(this);
+  navTimer->setInterval(33);
+  QObject::connect(navTimer, &QTimer::timeout, this, [this, axial, coronal, sagittal, statusLabel]()
+  {
+    QString navStatus;
+    const bool tracking =
+      axial->applyNavigationFocus(&this->sceneModel_, &this->igtlReceiver_, &navStatus);
+    if (tracking)
+    {
+      statusLabel->setText(navStatus);
+    }
+    if (tracking || this->igtlReceiver_.hasToolPose())
+    {
+      axial->update();
+      coronal->update();
+      sagittal->update();
+    }
+  });
+  navTimer->start();
 }
 
 MainWindow::~MainWindow()

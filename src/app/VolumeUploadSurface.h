@@ -16,6 +16,9 @@
 
 namespace nnc {
 
+class IgtlReceiver;
+class SceneModel;
+
 // Patient-space MPR (Slicer): axial=fixed z, coronal=fixed y, sagittal=fixed x.
 enum class SliceOrientation {
   Axial = 0,
@@ -34,6 +37,12 @@ public:
 
   // Shared focus in normalized patient AABB coords [0,1]^3 (x,y,z).
   void setFocusNorm(const QVector3D& focusNorm);
+
+  // Snapshot pose, compose registration, map tool tip → focusNorm for MPR crosshair.
+  // Returns true when navigation state was applied (registered + live pose).
+  bool applyNavigationFocus(const nnc::SceneModel* sceneModel,
+                            const nnc::IgtlReceiver* igtlReceiver,
+                            QString* statusOut = nullptr);
 
 signals:
   void statusChanged(const QString& text);
@@ -72,6 +81,7 @@ private:
   QVector2D viewCenterUv_{0.5f, 0.5f};
   QPoint lastViewCenterPos_;
   bool panning_ = false;
+  QString volumeStatusText_;
 
   QOpenGLShaderProgram program_;
   QOpenGLVertexArrayObject vao_;
